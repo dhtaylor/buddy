@@ -1,0 +1,57 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { User } from '@buddy/shared';
+import { api, ApiClientError } from './client.js';
+
+export function useCurrentUser() {
+  return useQuery<User | null>({
+    queryKey: ['me'],
+    queryFn: async () => {
+      try {
+        return await api.get<User>('/auth/me');
+      } catch (err) {
+        if (err instanceof ApiClientError && err.status === 401) return null;
+        throw err;
+      }
+    },
+  });
+}
+
+export function useLogin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { email: string; password: string }) =>
+      api.post<User>('/auth/login', vars),
+    onSuccess: (user) => qc.setQueryData(['me'], user),
+  });
+}
+
+export function useRegister() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      email: string;
+      password: string;
+      displayName: string;
+      householdName?: string;
+    }) => api.post<User>('/auth/register', vars),
+    onSuccess: (user) => qc.setQueryData(['me'], user),
+  });
+}
+
+export function useLogout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ ok: true }>('/auth/logout'),
+    onSuccess: () => {
+      qc.setQueryData(['me'], null);
+      qc.clear();
+    },
+  });
+}
+
+export function useAddSpouse() {
+  return useMutation({
+    mutationFn: (vars: { email: string; password: string; displayName: string }) =>
+      api.post<User>('/auth/add-spouse', vars),
+  });
+}

@@ -1,0 +1,20 @@
+services:
+  buddy:
+    build: .
+    container_name: buddy
+    ports:
+      - "8080:8080"
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      HOST: 0.0.0.0
+      DATABASE_PATH: /data/buddy.sqlite
+      WEB_DIST_PATH: /app/web/dist
+      # IMPORTANT for production: set a real 64-hex-char key (openssl rand -hex 32).
+      # SESSION_KEY: "<64 hex chars>"
+    volumes:
+      # Persist the SQLite database file across container restarts.
+      - ./data:/data
+      # Folder for scheduled SQLite backups (Phase 6).
+      - ./backups:/backups
+    restart: unless-stopped

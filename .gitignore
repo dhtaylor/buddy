@@ -1,0 +1,26 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+*.log
+npm-debug.log*
+
+# SQLite database + backups
+data/
+*.sqlite
+*.sqlite3
+*.db
+backups/
+
+# Env
+.env
+.env.local
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Vite / PWA
+web/dev-dist/
