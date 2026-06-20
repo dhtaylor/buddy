@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { useLogin, useRegister } from '../api/auth.js';
+import { useLogin, useRegister, useRegistrationStatus } from '../api/auth.js';
 import { ApiClientError } from '../api/client.js';
 
 export default function Login() {
+  const { data: registration } = useRegistrationStatus();
+  const canRegister = registration?.open === true;
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,7 +43,7 @@ export default function Login() {
       </div>
 
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
-        {mode === 'register' && (
+        {canRegister && mode === 'register' && (
           <>
             <Field label="Your name">
               <input
@@ -87,16 +89,22 @@ export default function Login() {
         </button>
       </form>
 
-      <button
-        type="button"
-        className="text-sm text-brand underline"
-        onClick={() => {
-          setError(null);
-          setMode((m) => (m === 'login' ? 'register' : 'login'));
-        }}
-      >
-        {mode === 'login' ? 'Need an account? Register' : 'Have an account? Log in'}
-      </button>
+      {canRegister ? (
+        <button
+          type="button"
+          className="text-sm text-brand underline"
+          onClick={() => {
+            setError(null);
+            setMode((m) => (m === 'login' ? 'register' : 'login'));
+          }}
+        >
+          {mode === 'login' ? 'First-time setup? Create the admin account' : 'Have an account? Log in'}
+        </button>
+      ) : (
+        <p className="text-center text-xs text-gray-400">
+          Registration is closed. Ask an admin to add you.
+        </p>
+      )}
     </div>
   );
 }

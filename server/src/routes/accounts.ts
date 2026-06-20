@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { Account } from '@buddy/shared';
 import { db } from '../db/index.js';
 import { accounts } from '../db/schema.js';
-import { authGuard, requireSession } from '../lib/auth.js';
+import { authGuard, requireHouseholdAdmin, requireSession } from '../lib/auth.js';
 import { notFound } from '../lib/errors.js';
 
 const accountBody = z.object({
@@ -33,7 +33,8 @@ const accountsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/', async (req, reply) => {
-    const { householdId } = requireSession(req);
+    const { userId, householdId } = requireSession(req);
+    requireHouseholdAdmin(userId, householdId);
     const body = accountBody.parse(req.body);
     const row = db
       .insert(accounts)
@@ -44,7 +45,8 @@ const accountsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.put('/:id', async (req, reply) => {
-    const { householdId } = requireSession(req);
+    const { userId, householdId } = requireSession(req);
+    requireHouseholdAdmin(userId, householdId);
     const id = Number((req.params as { id: string }).id);
     const body = accountBody.parse(req.body);
     const row = db
@@ -58,7 +60,8 @@ const accountsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete('/:id', async (req, reply) => {
-    const { householdId } = requireSession(req);
+    const { userId, householdId } = requireSession(req);
+    requireHouseholdAdmin(userId, householdId);
     const id = Number((req.params as { id: string }).id);
     const row = db
       .delete(accounts)

@@ -10,14 +10,28 @@ import {
 import {
   useCategories,
   useCreateCategory,
-  useDeleteCategory,
+  useSetCategoryArchived,
 } from '../api/categories.js';
-import { useHousehold, useHouseholdMembers, useUpdateHousehold } from '../api/household.js';
-import { useAddSpouse } from '../api/auth.js';
+import {
+  useHousehold,
+  useHouseholdMembers,
+  useMyHouseholds,
+  useRemoveMember,
+  useUpdateHousehold,
+} from '../api/household.js';
+import { useAddSpouse, useCurrentUser } from '../api/auth.js';
 import { ApiClientError } from '../api/client.js';
+import SystemSettings from '../components/SystemSettings.js';
 
 export default function Settings() {
   const logout = useLogout();
+  const { data: user } = useCurrentUser();
+  const active = useHousehold();
+  const mine = useMyHouseholds();
+  const myRole = mine.data?.find((h) => h.household.id === active.data?.id)?.role;
+  const isHouseholdAdmin = myRole === 'owner';
+  const isSystemAdmin = !!user?.isAdmin;
+
   return (
     <div className="flex flex-col gap-6 p-4">
       <div className="flex items-center justify-between">
@@ -26,11 +40,74 @@ export default function Settings() {
           Log out
         </button>
       </div>
-      <HouseholdSection />
-      <AccountsSection />
-      <CategoriesSection />
-      <SpouseSection />
+
+      <div className="flex flex-col gap-4">
+        <h2 className="text-base font-bold uppercase tracking-wide text-gray-500">
+          Household Settings
+        </h2>
+        {isHouseholdAdmin ? (
+          <>
+            <HouseholdSection />
+            <AccountsSection />
+            <CategoriesSection />
+            <SpouseSection />
+          </>
+        ) : (
+          <ReadOnlyHousehold />
+        )}
+      </div>
+
+      {isSystemAdmin && <SystemSettings />}
     </div>
+  );
+}
+
+// Read-only view for non-admin members.
+function ReadOnlyHousehold() {
+  const { data: household } = useHousehold();
+  const { data: accounts } = useAccounts();
+  const { data: categories } = useCategories();
+  const members = useHouseholdMembers();
+
+  return (
+    <Section title="Household">
+      <p className="rounded bg-gray-50 px-3 py-2 text-xs text-gray-500">
+        Only the household admin can change these settings.
+      </p>
+      {household && (
+        <div className="text-sm">
+          <div className="font-medium">{household.name}</div>
+          <div className="text-gray-500">Budget period: {household.periodLength}</div>
+        </div>
+      )}
+      <div className="text-sm">
+        <div className="font-medium">Accounts</div>
+        <ul className="mt-1 list-disc pl-5 text-gray-600">
+          {accounts?.map((a) => (
+            <li key={a.id}>
+              {a.name} — {formatCents(a.openingBalanceCents)} opening
+            </li>
+          ))}
+          {accounts?.length === 0 && <li className="list-none text-gray-400">None</li>}
+        </ul>
+      </div>
+      <div className="text-sm">
+        <div className="font-medium">Categories</div>
+        <div className="mt-1 text-gray-600">
+          {(categories ?? []).filter((c) => !c.archived).length} active
+        </div>
+      </div>
+      <div className="text-sm">
+        <div className="font-medium">Members</div>
+        <ul className="mt-1 list-disc pl-5 text-gray-600">
+          {members.data?.map((m) => (
+            <li key={m.user.id}>
+              {m.user.displayName} — {m.member.role === 'owner' ? 'household admin' : 'member'}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Section>
   );
 }
 
@@ -48,6 +125,8 @@ function HouseholdSection() {
   const { data } = useHousehold();
   const update = useUpdateHousehold();
   const members = useHouseholdMembers();
+  const { data: me } = useCurrentUser();
+  const removeMember = useRemoveMember();
 
   if (!data) return <Section title="Household">Loading…</Section>;
   return (
@@ -55,10 +134,27 @@ function HouseholdSection() {
       <HouseholdForm household={data} onSave={(patch) => update.mutate(patch)} />
       <div className="text-sm text-gray-600">
         <div className="font-medium">Members</div>
-        <ul className="mt-1 list-disc pl-5">
+        <ul className="mt-1 flex flex-col gap-1">
           {members.data?.map((m) => (
-            <li key={m.user.id}>
-              {m.user.displayName} ({m.user.email}) — {m.member.role}
+            <li
+              key={m.user.id}
+              className="flex items-center justify-between rounded bg-gray-50 px-3 py-1.5"
+            >
+              <span>
+                {m.user.displayName} ({m.user.email}) —{' '}
+                {m.member.role === 'owner' ? 'household admin' : 'member'}
+              </span>
+              {m.user.id !== me?.id && (
+                <button
+                  className="btn-danger py-1"
+                  onClick={() =>
+                    window.confirm(`Remove ${m.user.displayName} from this household?`) &&
+                    removeMember.mutate(m.user.id)
+                  }
+                >
+                  Remove
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -275,25 +371,28 @@ function AccountRow({
 function CategoriesSection() {
   const { data: categories } = useCategories();
   const create = useCreateCategory();
-  const del = useDeleteCategory();
+  const setArchived = useSetCategoryArchived();
 
   const [groupName, setGroupName] = useState('');
   const [name, setName] = useState('');
   const [kind, setKind] = useState<Category['kind']>('expense');
 
-  const groups = useMemo(() => {
+  const activeGroups = useMemo(() => {
     const map = new Map<string, Category[]>();
     for (const c of categories ?? []) {
+      if (c.archived) continue;
       if (!map.has(c.groupName)) map.set(c.groupName, []);
       map.get(c.groupName)!.push(c);
     }
     return [...map.entries()];
   }, [categories]);
 
+  const hidden = useMemo(() => (categories ?? []).filter((c) => c.archived), [categories]);
+
   return (
     <Section title="Categories">
       <div className="flex flex-col gap-3">
-        {groups.map(([group, cats]) => (
+        {activeGroups.map(([group, cats]) => (
           <div key={group}>
             <div className="text-sm font-semibold text-gray-700">{group}</div>
             <ul className="mt-1 flex flex-col gap-1">
@@ -310,8 +409,11 @@ function CategoriesSection() {
                       </span>
                     )}
                   </span>
-                  <button className="btn-danger" onClick={() => del.mutate(c.id)}>
-                    Delete
+                  <button
+                    className="btn-secondary py-1"
+                    onClick={() => setArchived.mutate({ id: c.id, archived: true })}
+                  >
+                    Hide
                   </button>
                 </li>
               ))}
@@ -319,6 +421,33 @@ function CategoriesSection() {
           </div>
         ))}
       </div>
+
+      {hidden.length > 0 && (
+        <div className="border-t border-gray-100 pt-3">
+          <div className="text-sm font-semibold text-gray-500">Hidden</div>
+          <p className="mb-1 text-xs text-gray-400">
+            Off the Budget page; past transactions &amp; History are kept.
+          </p>
+          <ul className="flex flex-col gap-1">
+            {hidden.map((c) => (
+              <li
+                key={c.id}
+                className="flex items-center justify-between rounded bg-gray-50 px-3 py-1.5 text-sm text-gray-500"
+              >
+                <span>
+                  {c.groupName} · {c.name}
+                </span>
+                <button
+                  className="btn-secondary py-1"
+                  onClick={() => setArchived.mutate({ id: c.id, archived: false })}
+                >
+                  Unhide
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <form
         className="flex flex-col gap-2 border-t border-gray-100 pt-3"

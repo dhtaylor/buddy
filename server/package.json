@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "seed": "tsx src/db/seed.ts",
+    "backup": "tsx src/db/backup.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts"
   },

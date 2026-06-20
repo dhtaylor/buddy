@@ -1,6 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useCurrentUser } from './api/auth.js';
 import BottomNav from './components/BottomNav.js';
+import HouseholdSwitcher from './components/HouseholdSwitcher.js';
+import IdleLogout from './components/IdleLogout.js';
+import InstallPrompt from './components/InstallPrompt.js';
 import Login from './pages/Login.js';
 import Home from './pages/Home.js';
 import Ledger from './pages/Ledger.js';
@@ -23,6 +26,7 @@ export default function App() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-screen-sm flex-col">
+      <HouseholdSwitcher />
       <main className="flex-1 pb-20">
         <Routes>
           <Route path="/" element={<Home />} />
@@ -36,6 +40,8 @@ export default function App() {
         </Routes>
       </main>
       <BottomNav />
+      <InstallPrompt />
+      <IdleLogout />
     </div>
   );
 }

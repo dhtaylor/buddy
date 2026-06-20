@@ -30,3 +30,35 @@ export function useHouseholdMembers() {
     queryFn: () => api.get<Array<{ member: HouseholdMember; user: User }>>('/household/members'),
   });
 }
+
+/** Remove a member from the active household (household admin only). */
+export function useRemoveMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: number) => api.del<{ ok: true }>(`/household/members/${userId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['household', 'members'] }),
+  });
+}
+
+export interface MyHousehold {
+  household: Household;
+  role: HouseholdMember['role'];
+}
+
+/** Every household the logged-in user belongs to (for the switcher). */
+export function useMyHouseholds() {
+  return useQuery<MyHousehold[]>({
+    queryKey: ['households', 'mine'],
+    queryFn: () => api.get<MyHousehold[]>('/household/mine'),
+  });
+}
+
+/** Switch the active household. */
+export function useSwitchHousehold() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (householdId: number) =>
+      api.post<Household>('/household/switch', { householdId }),
+    onSuccess: () => qc.clear(),
+  });
+}

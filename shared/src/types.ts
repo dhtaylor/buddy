@@ -23,6 +23,8 @@ export interface User {
   id: Id;
   email: string;
   displayName: string;
+  /** Global admin: may create new households. */
+  isAdmin: boolean;
 }
 
 export interface Household {
@@ -57,6 +59,8 @@ export interface Category {
   name: string;
   kind: CategoryKind;
   sortOrder: number;
+  /** Hidden from Budget + new-entry pickers; past data is retained. */
+  archived: boolean;
 }
 
 export interface LedgerEntry {

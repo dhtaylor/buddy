@@ -16,11 +16,25 @@ export function useCategories() {
   });
 }
 
+function invalidateCategoryConsumers(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['categories'] });
+  qc.invalidateQueries({ queryKey: ['budget'] });
+}
+
 export function useCreateCategory() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CategoryInput) => api.post<Category>('/categories', input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => invalidateCategoryConsumers(qc),
+  });
+}
+
+export function useSetCategoryArchived() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, archived }: { id: number; archived: boolean }) =>
+      api.put<Category>(`/categories/${id}/archived`, { archived }),
+    onSuccess: () => invalidateCategoryConsumers(qc),
   });
 }
 
@@ -37,6 +51,6 @@ export function useDeleteCategory() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => api.del<{ ok: true }>(`/categories/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => invalidateCategoryConsumers(qc),
   });
 }

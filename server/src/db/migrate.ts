@@ -1,7 +1,7 @@
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { db, sqlite } from './index.js';
+// CLI: apply all pending Drizzle migrations, then exit.
+import { runMigrations } from './migrator.js';
+import { sqlite } from './index.js';
 
-/** Apply all pending Drizzle migrations from ./drizzle, then exit. */
-migrate(db, { migrationsFolder: './drizzle' });
+runMigrations();
 console.log('Migrations applied.');
 sqlite.close();

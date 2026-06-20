@@ -66,7 +66,7 @@ function seed() {
     const passwordHash = bcrypt.hashSync(DEMO_PASSWORD, 10);
     const user = tx
       .insert(users)
-      .values({ email: DEMO_EMAIL, passwordHash, displayName: 'Demo User' })
+      .values({ email: DEMO_EMAIL, passwordHash, displayName: 'Demo User', isAdmin: true })
       .returning()
       .get();
 

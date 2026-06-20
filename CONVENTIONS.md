@@ -224,7 +224,9 @@ npm run db:migrate     # apply migrations (creates ./data/buddy.sqlite)
 npm run seed           # demo household + 28 seeded categories (demo@buddy.local / password123)
 npm run dev            # builds shared, then runs server :8080 + web :5173 (proxies /api)
 npm run build          # builds shared -> server -> web (run before committing)
-npm test               # Vitest for shared money/period utils
+npm test               # full Vitest suite: unit (shared utils + server pure logic)
+                       #   + integration (server/test/*.test.ts — real app via inject
+                       #   against a throwaway temp DB; no running server needed)
 ```
 Inside `server/`: `npm run db:generate` (after schema edits), `npm run start` (run built server).
 

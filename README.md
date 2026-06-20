@@ -17,7 +17,7 @@ npm run db:migrate     # create/upgrade the SQLite schema
 npm run seed           # demo household + seeded categories (demo@buddy.local / password123)
 npm run dev            # web on :5173 (proxies /api), server on :8080
 ```
-Other scripts: `npm run build` (all workspaces), `npm test` (shared utils), `npm run db:generate` (regenerate migration SQL after editing the schema — run inside `server/`).
+Other scripts: `npm run build` (all workspaces), `npm test` (full suite — unit + API integration tests against a throwaway temp DB; no running server needed), `npm run db:generate` (regenerate migration SQL after editing the schema — run inside `server/`).
 
 ## Deploy with Docker (always-on Windows PC)
 ```bash
@@ -25,7 +25,22 @@ docker compose up -d --build
 ```
 - App: `http://localhost:8080` on the host; `http://<pc-ip>:8080` from a phone on the LAN.
 - The SQLite DB lives in `./data/buddy.sqlite` (volume-mounted); back it up by copying that file.
+
+### Automatic backups
+`npm run backup` writes a consistent, WAL-safe snapshot to `./backups/buddy-YYYYMMDD-HHMMSS.sqlite`
+(keeps the most recent 30; override with `BACKUP_KEEP`). To run it nightly on the Windows host,
+create a Task Scheduler job (elevated PowerShell, once):
+```powershell
+$action  = New-ScheduledTaskAction -Execute "npm" -Argument "run backup" -WorkingDirectory "C:\DATA\claude\projects\personal\buddy"
+$trigger = New-ScheduledTaskTrigger -Daily -At 2am
+Register-ScheduledTask -TaskName "Buddy nightly backup" -Action $action -Trigger $trigger -RunLevel Highest
+```
+Point `./backups` at OneDrive or an external drive for off-machine safety.
 - For production, set a real `SESSION_KEY` (64 hex chars: `openssl rand -hex 32`) in `docker-compose.yml`.
+
+### Security
+- Responses carry a strict **Content-Security-Policy** (same-origin only; no third-party scripts) plus `X-Content-Type-Options`, `Referrer-Policy`, and `X-Frame-Options`.
+- **Idle auto-logout**: the app logs out (and clears its in-memory data cache) after inactivity. Default 15 min; change by setting `VITE_IDLE_MINUTES` at web build time, e.g. `VITE_IDLE_MINUTES=10 npm run build`.
 
 ### Windows Firewall (so her phone can reach it)
 Allow inbound TCP 8080 once, from an **elevated** PowerShell:

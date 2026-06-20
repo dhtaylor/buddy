@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { Category } from '@buddy/shared';
 import { db } from '../db/index.js';
 import { categories } from '../db/schema.js';
-import { authGuard, requireSession } from '../lib/auth.js';
+import { authGuard, requireHouseholdAdmin, requireSession } from '../lib/auth.js';
 import { notFound } from '../lib/errors.js';
 
 const categoryBody = z.object({
@@ -22,8 +22,11 @@ function toDto(row: typeof categories.$inferSelect): Category {
     name: row.name,
     kind: row.kind as Category['kind'],
     sortOrder: row.sortOrder,
+    archived: row.archived,
   };
 }
+
+const archivedBody = z.object({ archived: z.boolean() });
 
 const categoriesRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', authGuard);
@@ -39,7 +42,8 @@ const categoriesRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/', async (req, reply) => {
-    const { householdId } = requireSession(req);
+    const { userId, householdId } = requireSession(req);
+    requireHouseholdAdmin(userId, householdId);
     const body = categoryBody.parse(req.body);
     const row = db
       .insert(categories)
@@ -50,7 +54,8 @@ const categoriesRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.put('/:id', async (req, reply) => {
-    const { householdId } = requireSession(req);
+    const { userId, householdId } = requireSession(req);
+    requireHouseholdAdmin(userId, householdId);
     const id = Number((req.params as { id: string }).id);
     const body = categoryBody.parse(req.body);
     const row = db
@@ -63,8 +68,26 @@ const categoriesRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ data: toDto(row) });
   });
 
+  // Hide / unhide a category. Preferred over delete: keeps past transactions
+  // and History totals intact while removing it from the Budget page + pickers.
+  app.put('/:id/archived', async (req, reply) => {
+    const { userId, householdId } = requireSession(req);
+    requireHouseholdAdmin(userId, householdId);
+    const id = Number((req.params as { id: string }).id);
+    const { archived } = archivedBody.parse(req.body);
+    const row = db
+      .update(categories)
+      .set({ archived })
+      .where(and(eq(categories.id, id), eq(categories.householdId, householdId)))
+      .returning()
+      .get();
+    if (!row) throw notFound('Category not found');
+    return reply.send({ data: toDto(row) });
+  });
+
   app.delete('/:id', async (req, reply) => {
-    const { householdId } = requireSession(req);
+    const { userId, householdId } = requireSession(req);
+    requireHouseholdAdmin(userId, householdId);
     const id = Number((req.params as { id: string }).id);
     const row = db
       .delete(categories)

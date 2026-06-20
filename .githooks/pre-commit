@@ -1,0 +1,13 @@
+#!/bin/sh
+# Pre-commit gate: type-check/build everything and run the full test suite.
+# Blocks the commit on any TypeScript error or failing test.
+# Bypass in a pinch with: git commit --no-verify
+set -e
+
+echo "[pre-commit] building (type-check)…"
+npm run build
+
+echo "[pre-commit] running tests…"
+npm test
+
+echo "[pre-commit] OK"

@@ -18,9 +18,36 @@ import budgetRoutes from './routes/budget.js';
 import billsRoutes from './routes/bills.js';
 import importsRoutes from './routes/imports.js';
 import historyRoutes from './routes/history.js';
+import systemRoutes from './routes/system.js';
+
+// Content-Security-Policy tuned to the built app: all scripts are external
+// ('self'); charts set inline style attributes so styles allow 'unsafe-inline';
+// the app only talks to its own origin. No third-party origins are permitted.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+].join('; ');
 
 export async function buildApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: process.env.NODE_ENV === 'test' ? false : true });
+
+  // Security headers on every response.
+  app.addHook('onRequest', async (_req, reply) => {
+    reply.header('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('Referrer-Policy', 'no-referrer');
+    reply.header('X-Frame-Options', 'DENY');
+  });
 
   await app.register(cookie);
   await app.register(secureSession, {
@@ -60,6 +87,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await api.register(billsRoutes, { prefix: '/bills' });
       await api.register(importsRoutes, { prefix: '/imports' });
       await api.register(historyRoutes, { prefix: '/history' });
+      await api.register(systemRoutes, { prefix: '/system' });
       api.get('/health', async () => ({ data: { ok: true } }));
     },
     { prefix: '/api' },

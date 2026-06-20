@@ -27,6 +27,8 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   displayName: text('display_name').notNull(),
+  // Global admin: may create new households. First registered user bootstraps as admin.
+  isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const householdMembers = sqliteTable(
@@ -77,6 +79,9 @@ export const categories = sqliteTable(
     // 'income' | 'expense'
     kind: text('kind').notNull().default('expense'),
     sortOrder: integer('sort_order').notNull().default(0),
+    // Hidden from the Budget page + new-entry pickers, but kept so past
+    // transactions and History totals remain intact. Can be unhidden.
+    archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => ({
     byHousehold: index('categories_household_idx').on(t.householdId),
@@ -199,6 +204,9 @@ export const imports = sqliteTable(
     // 'csv' | 'ofx'
     sourceFormat: text('source_format').notNull(),
     importedAt: text('imported_at').notNull(),
+    // Set when the user confirms the import. Until then the staged rows are a
+    // draft: they do NOT count toward dedupe and can be discarded.
+    confirmedAt: text('confirmed_at'),
   },
   (t) => ({
     byHousehold: index('imports_household_idx').on(t.householdId),

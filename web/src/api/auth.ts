@@ -16,6 +16,14 @@ export function useCurrentUser() {
   });
 }
 
+/** Whether open registration is available (only on a fresh install). */
+export function useRegistrationStatus() {
+  return useQuery<{ open: boolean }>({
+    queryKey: ['registration-status'],
+    queryFn: () => api.get<{ open: boolean }>('/auth/registration-status'),
+  });
+}
+
 export function useLogin() {
   const qc = useQueryClient();
   return useMutation({

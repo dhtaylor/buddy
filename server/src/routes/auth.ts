@@ -5,8 +5,8 @@ import { z } from 'zod';
 import { weeklyPeriod, toISODate, type User } from '@buddy/shared';
 import { db } from '../db/index.js';
 import { users, households, householdMembers } from '../db/schema.js';
-import { badRequest, conflict, unauthorized } from '../lib/errors.js';
-import { requireSession } from '../lib/auth.js';
+import { badRequest, conflict, forbidden, unauthorized } from '../lib/errors.js';
+import { requireHouseholdAdmin, requireSession } from '../lib/auth.js';
 
 const registerBody = z.object({
   email: z.string().email(),
@@ -26,20 +26,37 @@ const addSpouseBody = z.object({
   displayName: z.string().min(1),
 });
 
-function toUserDto(row: { id: number; email: string; displayName: string }): User {
-  return { id: row.id, email: row.email, displayName: row.displayName };
+function toUserDto(row: {
+  id: number;
+  email: string;
+  displayName: string;
+  isAdmin: boolean;
+}): User {
+  return { id: row.id, email: row.email, displayName: row.displayName, isAdmin: row.isAdmin };
 }
 
 const authRoutes: FastifyPluginAsync = async (app) => {
-  // Register a brand-new user AND create their household.
+  // Whether open registration is available (only true on a fresh install with no
+  // users yet). The login screen uses this to show/hide the register form.
+  app.get('/registration-status', async (_req, reply) => {
+    const anyUser = db.select().from(users).limit(1).get();
+    return reply.send({ data: { open: !anyUser } });
+  });
+
+  // Register the FIRST user (bootstrap admin) AND create their household.
+  // Once any user exists, registration is closed — admins add users instead.
   app.post('/register', async (req, reply) => {
     const body = registerBody.parse(req.body);
-    const existing = db.select().from(users).where(eq(users.email, body.email)).get();
-    if (existing) throw conflict('Email already registered', 'email_taken');
+    const anyUser = db.select().from(users).limit(1).get();
+    if (anyUser) {
+      throw forbidden('Registration is closed. Ask an admin to add you.', 'registration_closed');
+    }
 
     const passwordHash = bcrypt.hashSync(body.password, 10);
     const todayIso = toISODate(new Date());
     const week = weeklyPeriod(todayIso);
+    // The very first user to register bootstraps as the global admin.
+    const isFirstUser = !db.select().from(users).limit(1).get();
 
     const result = db.transaction((tx) => {
       const household = tx
@@ -54,7 +71,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
         .get();
       const user = tx
         .insert(users)
-        .values({ email: body.email, passwordHash, displayName: body.displayName })
+        .values({ email: body.email, passwordHash, displayName: body.displayName, isAdmin: isFirstUser })
         .returning()
         .get();
       tx.insert(householdMembers)
@@ -68,9 +85,10 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send({ data: toUserDto(result.user) });
   });
 
-  // Add a spouse/partner to the caller's existing household.
+  // Add a member to the caller's active household (household admin only).
   app.post('/add-spouse', async (req, reply) => {
     const session = requireSession(req);
+    requireHouseholdAdmin(session.userId, session.householdId);
     const body = addSpouseBody.parse(req.body);
     const existing = db.select().from(users).where(eq(users.email, body.email)).get();
     if (existing) throw conflict('Email already registered', 'email_taken');
