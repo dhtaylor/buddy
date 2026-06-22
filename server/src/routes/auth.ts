@@ -4,7 +4,8 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { weeklyPeriod, toISODate, type User } from '@buddy/shared';
 import { db } from '../db/index.js';
-import { users, households, householdMembers } from '../db/schema.js';
+import { users, households, householdMembers, categories } from '../db/schema.js';
+import { defaultCategoryRows } from '../db/default-categories.js';
 import { badRequest, conflict, forbidden, unauthorized } from '../lib/errors.js';
 import { requireHouseholdAdmin, requireSession } from '../lib/auth.js';
 
@@ -79,6 +80,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
       await tx
         .insert(householdMembers)
         .values({ householdId: household.id, userId: user.id, role: 'owner' });
+      await tx.insert(categories).values(defaultCategoryRows(household.id));
       return { user, householdId: household.id };
     });
 

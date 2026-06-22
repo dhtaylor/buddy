@@ -9,34 +9,7 @@ import { eq } from 'drizzle-orm';
 import { weeklyPeriod, toISODate } from '@buddy/shared';
 import { db, closeDb } from './index.js';
 import { households, users, householdMembers, accounts, categories } from './schema.js';
-
-type Kind = 'income' | 'expense';
-
-// Category groups seeded from the paper budget photos.
-const CATEGORY_SEED: Array<{ group: string; kind: Kind; names: string[] }> = [
-  { group: 'Income', kind: 'income', names: ['Paycheck', 'Transfer'] },
-  { group: 'Church', kind: 'expense', names: ['Tithing', 'Fast Offering'] },
-  { group: 'Groceries', kind: 'expense', names: ['Groceries'] },
-  { group: 'House', kind: 'expense', names: ['House payment', 'Heloc'] },
-  {
-    group: 'Utilities',
-    kind: 'expense',
-    names: ['T-Mobile', 'Rocky Mtn Power', 'Enbridge Gas', 'Signature Pest', 'Wasatch Front Waste'],
-  },
-  {
-    group: 'Healthcare',
-    kind: 'expense',
-    names: ['Am Gen Life', 'Redi Health', 'VA Payment', 'Select Health'],
-  },
-  { group: 'Cars', kind: 'expense', names: ['Fuel', 'Auto', 'Progressive'] },
-  { group: 'Entertainment', kind: 'expense', names: ['Eating Out F', 'Eating Out D', 'Disney Plus'] },
-  {
-    group: 'Family',
-    kind: 'expense',
-    names: ['School Lunch/Fees', 'Christmas', 'Haircuts', 'Date', 'Savings'],
-  },
-  { group: 'Incidentals', kind: 'expense', names: ['Incidentals'] },
-];
+import { defaultCategoryRows } from './default-categories.js';
 
 const DEMO_EMAIL = 'demo@buddy.local';
 const DEMO_PASSWORD = 'password123';
@@ -83,21 +56,11 @@ async function seed() {
       openingBalanceCents: 0,
     });
 
-    let sortOrder = 0;
-    for (const grp of CATEGORY_SEED) {
-      for (const name of grp.names) {
-        await tx.insert(categories).values({
-          householdId: household.id,
-          groupName: grp.group,
-          name,
-          kind: grp.kind,
-          sortOrder: sortOrder++,
-        });
-      }
-    }
+    const catRows = defaultCategoryRows(household.id);
+    await tx.insert(categories).values(catRows);
 
     console.log(
-      `Seeded household "${household.name}" (id=${household.id}), user ${DEMO_EMAIL} / ${DEMO_PASSWORD}, ${sortOrder} categories.`,
+      `Seeded household "${household.name}" (id=${household.id}), user ${DEMO_EMAIL} / ${DEMO_PASSWORD}, ${catRows.length} categories.`,
     );
   });
 }

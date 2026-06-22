@@ -21,6 +21,7 @@ import {
 import { authGuard, requireSession, requireSystemAdmin } from '../lib/auth.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { listBackups, runBackup } from '../lib/backup.js';
+import { defaultCategoryRows } from '../db/default-categories.js';
 
 async function adminCount(): Promise<number> {
   const r = (await db.select({ c: sql<number>`count(*)` }).from(users).where(eq(users.isAdmin, true)))[0];
@@ -72,6 +73,7 @@ const systemRoutes: FastifyPluginAsync = async (app) => {
           .returning()
       )[0];
       await tx.insert(householdMembers).values({ householdId: created.id, userId, role: 'owner' });
+      await tx.insert(categories).values(defaultCategoryRows(created.id));
       return created;
     });
     return reply.code(201).send({ data: { id: h.id, name: h.name } });

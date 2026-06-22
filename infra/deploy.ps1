@@ -94,6 +94,7 @@ az webapp config appsettings set -g $ResourceGroup -n $app --settings `
   WEB_DIST_PATH=/app/web/dist `
   BACKUP_DIR=/home/backups `
   DATABASE_SSL=true `
+  COOKIE_SECURE=true `
   "DATABASE_URL=@Microsoft.KeyVault(SecretUri=$dbUri)" `
   "SESSION_KEY=@Microsoft.KeyVault(SecretUri=$sessionUri)" | Out-Null
 

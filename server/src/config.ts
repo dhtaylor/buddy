@@ -16,8 +16,13 @@ export const config = {
   sessionKeyHex:
     process.env.SESSION_KEY ??
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-  /** Send the session cookie only over HTTPS (on in production / behind TLS). */
-  cookieSecure: process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+  /**
+   * Send the session cookie only over HTTPS. MUST stay false for the home LAN
+   * deployment (served over plain http://<pc-ip>:8080) — a Secure cookie is
+   * silently dropped by browsers over HTTP on non-localhost hosts, which breaks
+   * login. Set COOKIE_SECURE=true only when actually behind HTTPS (e.g. Azure).
+   */
+  cookieSecure: process.env.COOKIE_SECURE === 'true',
   // Path to the built web app (served statically in production).
   webDistPath: resolve(process.env.WEB_DIST_PATH ?? '../web/dist'),
   isProduction: process.env.NODE_ENV === 'production',
