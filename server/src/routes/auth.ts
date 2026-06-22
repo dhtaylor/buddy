@@ -39,7 +39,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
   // Whether open registration is available (only true on a fresh install with no
   // users yet). The login screen uses this to show/hide the register form.
   app.get('/registration-status', async (_req, reply) => {
-    const anyUser = db.select().from(users).limit(1).get();
+    const anyUser = (await db.select().from(users).limit(1))[0];
     return reply.send({ data: { open: !anyUser } });
   });
 
@@ -47,7 +47,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
   // Once any user exists, registration is closed — admins add users instead.
   app.post('/register', async (req, reply) => {
     const body = registerBody.parse(req.body);
-    const anyUser = db.select().from(users).limit(1).get();
+    const anyUser = (await db.select().from(users).limit(1))[0];
     if (anyUser) {
       throw forbidden('Registration is closed. Ask an admin to add you.', 'registration_closed');
     }
@@ -56,27 +56,29 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     const todayIso = toISODate(new Date());
     const week = weeklyPeriod(todayIso);
     // The very first user to register bootstraps as the global admin.
-    const isFirstUser = !db.select().from(users).limit(1).get();
+    const isFirstUser = !(await db.select().from(users).limit(1))[0];
 
-    const result = db.transaction((tx) => {
-      const household = tx
-        .insert(households)
-        .values({
-          name: body.householdName ?? `${body.displayName}'s Household`,
-          periodLength: 'weekly',
-          periodAnchorDate: week.startDate,
-          periodCustomDays: null,
-        })
-        .returning()
-        .get();
-      const user = tx
-        .insert(users)
-        .values({ email: body.email, passwordHash, displayName: body.displayName, isAdmin: isFirstUser })
-        .returning()
-        .get();
-      tx.insert(householdMembers)
-        .values({ householdId: household.id, userId: user.id, role: 'owner' })
-        .run();
+    const result = await db.transaction(async (tx) => {
+      const household = (
+        await tx
+          .insert(households)
+          .values({
+            name: body.householdName ?? `${body.displayName}'s Household`,
+            periodLength: 'weekly',
+            periodAnchorDate: week.startDate,
+            periodCustomDays: null,
+          })
+          .returning()
+      )[0];
+      const user = (
+        await tx
+          .insert(users)
+          .values({ email: body.email, passwordHash, displayName: body.displayName, isAdmin: isFirstUser })
+          .returning()
+      )[0];
+      await tx
+        .insert(householdMembers)
+        .values({ householdId: household.id, userId: user.id, role: 'owner' });
       return { user, householdId: household.id };
     });
 
@@ -88,21 +90,22 @@ const authRoutes: FastifyPluginAsync = async (app) => {
   // Add a member to the caller's active household (household admin only).
   app.post('/add-spouse', async (req, reply) => {
     const session = requireSession(req);
-    requireHouseholdAdmin(session.userId, session.householdId);
+    await requireHouseholdAdmin(session.userId, session.householdId);
     const body = addSpouseBody.parse(req.body);
-    const existing = db.select().from(users).where(eq(users.email, body.email)).get();
+    const existing = (await db.select().from(users).where(eq(users.email, body.email)))[0];
     if (existing) throw conflict('Email already registered', 'email_taken');
 
     const passwordHash = bcrypt.hashSync(body.password, 10);
-    const user = db.transaction((tx) => {
-      const created = tx
-        .insert(users)
-        .values({ email: body.email, passwordHash, displayName: body.displayName })
-        .returning()
-        .get();
-      tx.insert(householdMembers)
-        .values({ householdId: session.householdId, userId: created.id, role: 'member' })
-        .run();
+    const user = await db.transaction(async (tx) => {
+      const created = (
+        await tx
+          .insert(users)
+          .values({ email: body.email, passwordHash, displayName: body.displayName })
+          .returning()
+      )[0];
+      await tx
+        .insert(householdMembers)
+        .values({ householdId: session.householdId, userId: created.id, role: 'member' });
       return created;
     });
     return reply.code(201).send({ data: toUserDto(user) });
@@ -110,15 +113,16 @@ const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/login', async (req, reply) => {
     const body = loginBody.parse(req.body);
-    const user = db.select().from(users).where(eq(users.email, body.email)).get();
+    const user = (await db.select().from(users).where(eq(users.email, body.email)))[0];
     if (!user || !bcrypt.compareSync(body.password, user.passwordHash)) {
       throw unauthorized('Invalid email or password', 'invalid_credentials');
     }
-    const membership = db
-      .select()
-      .from(householdMembers)
-      .where(eq(householdMembers.userId, user.id))
-      .get();
+    const membership = (
+      await db
+        .select()
+        .from(householdMembers)
+        .where(eq(householdMembers.userId, user.id))
+    )[0];
     if (!membership) throw badRequest('User has no household', 'no_household');
 
     req.session.set('userId', user.id);
@@ -133,7 +137,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/me', async (req, reply) => {
     const session = requireSession(req);
-    const user = db.select().from(users).where(eq(users.id, session.userId)).get();
+    const user = (await db.select().from(users).where(eq(users.id, session.userId)))[0];
     if (!user) {
       req.session.delete();
       throw unauthorized();

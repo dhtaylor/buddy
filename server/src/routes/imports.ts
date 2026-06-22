@@ -286,12 +286,11 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', authGuard);
 
   /** Build the staged-transactions view (txn + suggested matched entry) for an import. */
-  function stageView(householdId: number, importId: number): StagedTxn[] {
-    const txns = db
+  async function stageView(householdId: number, importId: number): Promise<StagedTxn[]> {
+    const txns = await db
       .select()
       .from(importedTransactions)
-      .where(eq(importedTransactions.importId, importId))
-      .all();
+      .where(eq(importedTransactions.importId, importId));
 
     const matchedIds = txns
       .map((t) => t.matchedEntryId)
@@ -299,7 +298,7 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
 
     const entries =
       matchedIds.length > 0
-        ? db
+        ? await db
             .select()
             .from(ledgerEntries)
             .where(
@@ -308,7 +307,6 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
                 inArray(ledgerEntries.id, matchedIds),
               ),
             )
-            .all()
         : [];
     const byId = new Map(entries.map((e) => [e.id, e]));
 
@@ -322,12 +320,14 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
   }
 
   /** Verify an import belongs to the caller's household; throw 404 otherwise. */
-  function requireImport(householdId: number, importId: number) {
-    const imp = db
-      .select()
-      .from(imports)
-      .where(and(eq(imports.id, importId), eq(imports.householdId, householdId)))
-      .get();
+  async function requireImport(householdId: number, importId: number) {
+    const imp = (
+      await db
+        .select()
+        .from(imports)
+        .where(and(eq(imports.id, importId), eq(imports.householdId, householdId)))
+        .limit(1)
+    )[0];
     if (!imp) throw notFound('Import not found');
     return imp;
   }
@@ -335,12 +335,12 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
   // GET / — recent imports list.
   app.get('/', async (req, reply) => {
     const { householdId } = requireSession(req);
-    const rows = db
-      .select()
-      .from(imports)
-      .where(eq(imports.householdId, householdId))
-      .all()
-      .sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+    const rows = (
+      await db
+        .select()
+        .from(imports)
+        .where(eq(imports.householdId, householdId))
+    ).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
     return reply.send({ data: rows.map(importToDto) });
   });
 
@@ -356,34 +356,36 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
     const accountId = Number(accountField?.value);
     if (!Number.isInteger(accountId)) throw badRequest('accountId is required');
 
-    const account = db
-      .select()
-      .from(accounts)
-      .where(and(eq(accounts.id, accountId), eq(accounts.householdId, householdId)))
-      .get();
+    const account = (
+      await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, accountId), eq(accounts.householdId, householdId)))
+        .limit(1)
+    )[0];
     if (!account) throw notFound('Account not found');
 
     // Discard any abandoned (unconfirmed) draft imports for this account so they
     // don't accumulate or block re-importing the same file. Nothing was written
     // to the ledger for these, so this is safe.
-    const staleImports = db
-      .select({ id: imports.id })
-      .from(imports)
-      .where(
-        and(
-          eq(imports.householdId, householdId),
-          eq(imports.accountId, accountId),
-          isNull(imports.confirmedAt),
-        ),
-      )
-      .all()
-      .map((r) => r.id);
+    const staleImports = (
+      await db
+        .select({ id: imports.id })
+        .from(imports)
+        .where(
+          and(
+            eq(imports.householdId, householdId),
+            eq(imports.accountId, accountId),
+            isNull(imports.confirmedAt),
+          ),
+        )
+    ).map((r) => r.id);
     if (staleImports.length > 0) {
-      db.transaction(() => {
-        db.delete(importedTransactions)
-          .where(inArray(importedTransactions.importId, staleImports))
-          .run();
-        db.delete(imports).where(inArray(imports.id, staleImports)).run();
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(importedTransactions)
+          .where(inArray(importedTransactions.importId, staleImports));
+        await tx.delete(imports).where(inArray(imports.id, staleImports));
       });
     }
 
@@ -404,46 +406,47 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
     // Dedupe only against fingerprints from CONFIRMED imports — a draft that was
     // uploaded but never confirmed must not block re-importing the same file.
     const existingFps = new Set(
-      db
-        .select({ fp: importedTransactions.fingerprint })
-        .from(importedTransactions)
-        .innerJoin(imports, eq(importedTransactions.importId, imports.id))
-        .where(and(eq(imports.householdId, householdId), isNotNull(imports.confirmedAt)))
-        .all()
-        .map((r) => r.fp),
+      (
+        await db
+          .select({ fp: importedTransactions.fingerprint })
+          .from(importedTransactions)
+          .innerJoin(imports, eq(importedTransactions.importId, imports.id))
+          .where(and(eq(imports.householdId, householdId), isNotNull(imports.confirmedAt)))
+      ).map((r) => r.fp),
     );
 
     // Candidate manual, not-cleared entries in this account for auto-match.
-    const candidates: MatchCandidate[] = db
-      .select()
-      .from(ledgerEntries)
-      .where(
-        and(
-          eq(ledgerEntries.householdId, householdId),
-          eq(ledgerEntries.accountId, accountId),
-          eq(ledgerEntries.source, 'manual'),
-          eq(ledgerEntries.cleared, false),
-        ),
-      )
-      .all()
-      .map((e) => ({
-        id: e.id,
-        entryDate: e.entryDate,
-        amountCents: e.amountCents,
-        direction: e.direction as EntryDirection,
-      }));
+    const candidates: MatchCandidate[] = (
+      await db
+        .select()
+        .from(ledgerEntries)
+        .where(
+          and(
+            eq(ledgerEntries.householdId, householdId),
+            eq(ledgerEntries.accountId, accountId),
+            eq(ledgerEntries.source, 'manual'),
+            eq(ledgerEntries.cleared, false),
+          ),
+        )
+    ).map((e) => ({
+      id: e.id,
+      entryDate: e.entryDate,
+      amountCents: e.amountCents,
+      direction: e.direction as EntryDirection,
+    }));
 
-    const importRow = db
-      .insert(imports)
-      .values({
-        householdId,
-        accountId,
-        filename: file.filename,
-        sourceFormat: format,
-        importedAt: new Date().toISOString(),
-      })
-      .returning()
-      .get();
+    const importRow = (
+      await db
+        .insert(imports)
+        .values({
+          householdId,
+          accountId,
+          filename: file.filename,
+          sourceFormat: format,
+          importedAt: new Date().toISOString(),
+        })
+        .returning()
+    )[0];
 
     let skipped = 0;
     const seenInFile = new Set<string>();
@@ -461,23 +464,21 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
       const matchedEntryId = pickMatch(row, available);
       if (matchedEntryId !== null) claimed.add(matchedEntryId);
 
-      db.insert(importedTransactions)
-        .values({
-          importId: importRow.id,
-          txnDate: row.txnDate,
-          description: row.description,
-          amountCents: row.amountCents,
-          fingerprint: fp,
-          status: matchedEntryId !== null ? 'matched' : 'new',
-          matchedEntryId,
-        })
-        .run();
+      await db.insert(importedTransactions).values({
+        importId: importRow.id,
+        txnDate: row.txnDate,
+        description: row.description,
+        amountCents: row.amountCents,
+        fingerprint: fp,
+        status: matchedEntryId !== null ? 'matched' : 'new',
+        matchedEntryId,
+      });
     }
 
     return reply.code(201).send({
       data: {
         import: importToDto(importRow),
-        transactions: stageView(householdId, importRow.id),
+        transactions: await stageView(householdId, importRow.id),
         skipped,
       },
     });
@@ -487,9 +488,9 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
   app.get('/:id', async (req, reply) => {
     const { householdId } = requireSession(req);
     const id = Number((req.params as { id: string }).id);
-    const imp = requireImport(householdId, id);
+    const imp = await requireImport(householdId, id);
     return reply.send({
-      data: { import: importToDto(imp), transactions: stageView(householdId, id) },
+      data: { import: importToDto(imp), transactions: await stageView(householdId, id) },
     });
   });
 
@@ -497,28 +498,27 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/:id/confirm', async (req, reply) => {
     const { householdId } = requireSession(req);
     const id = Number((req.params as { id: string }).id);
-    const imp = requireImport(householdId, id);
+    const imp = await requireImport(householdId, id);
     if (imp.confirmedAt) throw conflict('This import was already confirmed');
     const { decisions } = confirmBody.parse(req.body);
 
     // Load this import's staged transactions, keyed by id.
-    const txns = db
+    const txns = await db
       .select()
       .from(importedTransactions)
-      .where(eq(importedTransactions.importId, id))
-      .all();
+      .where(eq(importedTransactions.importId, id));
     const txnById = new Map(txns.map((t) => [t.id, t]));
 
-    db.transaction(() => {
+    await db.transaction(async (tx) => {
       for (const d of decisions) {
         const txn = txnById.get(d.importedTxnId);
         if (!txn) throw badRequest(`Unknown transaction ${d.importedTxnId}`);
 
         if (d.action === 'ignore') {
-          db.update(importedTransactions)
+          await tx
+            .update(importedTransactions)
             .set({ status: 'ignored' })
-            .where(eq(importedTransactions.id, txn.id))
-            .run();
+            .where(eq(importedTransactions.id, txn.id));
           continue;
         }
 
@@ -527,56 +527,55 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
             throw badRequest(`Transaction ${txn.id} has no matched entry to clear`);
           }
           // Scope the update through the household to prevent cross-tenant writes.
-          const updated = db
-            .update(ledgerEntries)
-            .set({ cleared: true, clearedDate: txn.txnDate })
-            .where(
-              and(
-                eq(ledgerEntries.id, txn.matchedEntryId),
-                eq(ledgerEntries.householdId, householdId),
-              ),
-            )
-            .returning()
-            .get();
+          const updated = (
+            await tx
+              .update(ledgerEntries)
+              .set({ cleared: true, clearedDate: txn.txnDate })
+              .where(
+                and(
+                  eq(ledgerEntries.id, txn.matchedEntryId),
+                  eq(ledgerEntries.householdId, householdId),
+                ),
+              )
+              .returning()
+          )[0];
           if (!updated) throw notFound('Matched ledger entry not found');
-          db.update(importedTransactions)
+          await tx
+            .update(importedTransactions)
             .set({ status: 'matched' })
-            .where(eq(importedTransactions.id, txn.id))
-            .run();
+            .where(eq(importedTransactions.id, txn.id));
           continue;
         }
 
         // d.action === 'add' — create a new cleared, imported ledger entry.
-        db.insert(ledgerEntries)
-          .values({
-            householdId,
-            accountId: imp.accountId,
-            entryDate: txn.txnDate,
-            payee: txn.description,
-            categoryId: d.categoryId ?? null,
-            amountCents: Math.abs(txn.amountCents),
-            direction: directionForAmount(txn.amountCents),
-            cleared: true,
-            clearedDate: txn.txnDate,
-            source: 'imported',
-            note: null,
-          })
-          .run();
-        db.update(importedTransactions)
+        await tx.insert(ledgerEntries).values({
+          householdId,
+          accountId: imp.accountId,
+          entryDate: txn.txnDate,
+          payee: txn.description,
+          categoryId: d.categoryId ?? null,
+          amountCents: Math.abs(txn.amountCents),
+          direction: directionForAmount(txn.amountCents),
+          cleared: true,
+          clearedDate: txn.txnDate,
+          source: 'imported',
+          note: null,
+        });
+        await tx
+          .update(importedTransactions)
           .set({ status: 'new' })
-          .where(eq(importedTransactions.id, txn.id))
-          .run();
+          .where(eq(importedTransactions.id, txn.id));
       }
 
       // Mark the import confirmed so its rows count toward future dedupe.
-      db.update(imports)
+      await tx
+        .update(imports)
         .set({ confirmedAt: new Date().toISOString() })
-        .where(eq(imports.id, id))
-        .run();
+        .where(eq(imports.id, id));
     });
 
     return reply.send({
-      data: { import: importToDto(imp), transactions: stageView(householdId, id) },
+      data: { import: importToDto(imp), transactions: await stageView(householdId, id) },
     });
   });
 
@@ -585,11 +584,11 @@ const importsRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/:id', async (req, reply) => {
     const { householdId } = requireSession(req);
     const id = Number((req.params as { id: string }).id);
-    const imp = requireImport(householdId, id);
+    const imp = await requireImport(householdId, id);
     if (imp.confirmedAt) throw conflict('Cannot delete a confirmed import');
-    db.transaction(() => {
-      db.delete(importedTransactions).where(eq(importedTransactions.importId, id)).run();
-      db.delete(imports).where(eq(imports.id, id)).run();
+    await db.transaction(async (tx) => {
+      await tx.delete(importedTransactions).where(eq(importedTransactions.importId, id));
+      await tx.delete(imports).where(eq(imports.id, id));
     });
     return reply.send({ data: { ok: true } });
   });

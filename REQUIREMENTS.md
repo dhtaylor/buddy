@@ -27,7 +27,7 @@ speculative. Correctness of money math above all.
 | Decision | Choice |
 |---|---|
 | Hosting | Self-hosted on an always-on **Windows PC via Docker**; reachable on the home **LAN** (`http://<pc-ip>:8080`). Public web deferred. |
-| Storage | Local **SQLite** file; backed up by copying. No cloud dependency. |
+| Storage | **PostgreSQL** (Drizzle). Local/home via Docker Compose; Azure via Postgres Flexible Server. Tests run on in-process **PGlite**. |
 | Bank data | **CSV/OFX file import** (no Plaid/bank API). Used to auto-match & clear manual entries. |
 | Ledger ↔ Budget | **Auto-linked by category** — budget "Actual" is derived from the ledger, never hand-copied. |
 | Multi-tenancy | Multiple **households**, fully data-segregated. A user can belong to many and switch. |
@@ -43,8 +43,9 @@ speculative. Correctness of money math above all.
 
 - **Monorepo** (npm workspaces): `shared/` (types + money/date utils), `server/` (API + static
   host), `web/` (UI).
-- **Server:** Node + **Fastify** + TypeScript; **better-sqlite3** + **Drizzle ORM**; serves the
-  built web app and the REST API on port **8080** (`0.0.0.0`). No third-party/outbound services.
+- **Server:** Node + **Fastify** + TypeScript; **PostgreSQL** via **Drizzle ORM** (`postgres`/postgres.js
+  driver in production, **PGlite** in-process for tests); serves the built web app and the REST API on
+  port **8080** (`0.0.0.0`). All DB access is async.
 - **Web:** **React 18 + Vite + TypeScript + Tailwind CSS + PWA** (`vite-plugin-pwa`,
   `registerType: autoUpdate`). **TanStack Query** for data; cookie-based auth via a small `api`
   client. Mobile-first; "Add to Home Screen" supported.
@@ -59,8 +60,13 @@ speculative. Correctness of money math above all.
 
 ## 4. Deployment
 
-- `docker compose up -d --build` on the Windows host. SQLite DB volume-mounted at
-  `server/data/buddy.sqlite`; `backups/` folder mounted.
+**Home / self-host (Windows PC):** `docker compose up -d --build` runs Postgres + the app together;
+Postgres data persists in `./data/pg`, `backups/` mounted for pg_dump snapshots.
+
+**Azure (cloud):** `az login` then `pwsh ./infra/deploy.ps1 -ResourceGroup buddy-rg` provisions ACR
+(cloud image build), Postgres Flexible Server (B1ms), Key Vault (SESSION_KEY + DB URL), and a Linux
+App Service for Containers whose managed identity reads the secrets via Key Vault references. HTTPS is
+automatic; `NODE_ENV=production` enables the `Secure` cookie; migrations run on container start. ~$25–30/mo.
 - Windows Firewall: allow inbound TCP **8080** (one-time elevated `New-NetFirewallRule`).
 - On her phone (same Wi-Fi): open `http://<pc-ip>:8080` **with `http://` explicit** (PWA install
   requires HTTPS/localhost, so full "install" only works over HTTPS — browser use works over HTTP).
@@ -68,7 +74,7 @@ speculative. Correctness of money math above all.
 
 ---
 
-## 5. Data model (SQLite / Drizzle)
+## 5. Data model (PostgreSQL / Drizzle)
 
 All money columns are integer cents; dates are ISO text; every domain table carries `household_id`.
 
@@ -245,7 +251,10 @@ In `server/`: `npm run db:generate` (after schema edits) · `npm run start` (run
 - [ ] Web bundle is a single ~644 KB chunk — fine, but could be code-split if load time matters.
 - [ ] Idle timeout is **build-time** (`VITE_IDLE_MINUTES`); could become a runtime/admin setting.
 
+**Cloud deployment (delivered — `infra/deploy.ps1`)**
+- [x] Azure App Service + Postgres + Key Vault, HTTPS + Secure cookie + managed identity.
+- [ ] Validate the deploy script against a live subscription; add a custom domain + managed cert if wanted.
+- [ ] Optional: CI/CD deploy (GitHub Actions OIDC → `az acr build` → restart) — currently CI runs build+test only.
+
 **Deferred by design (future)**
-- [ ] Public-web deployment hardening: HTTPS, `secure` cookie, real `SESSION_KEY`, reverse proxy /
-      Tailscale.
 - [ ] Live bank feed (Plaid / SimpleFIN) as an alternative to CSV/OFX import.

@@ -60,28 +60,31 @@ function occurrenceToDto(row: typeof billOccurrences.$inferSelect): BillOccurren
 }
 
 /** Load a bill scoped to the household, or throw 404. */
-function requireBill(billId: number, householdId: number): typeof bills.$inferSelect {
-  const bill = db
-    .select()
-    .from(bills)
-    .where(and(eq(bills.id, billId), eq(bills.householdId, householdId)))
-    .get();
+async function requireBill(
+  billId: number,
+  householdId: number,
+): Promise<typeof bills.$inferSelect> {
+  const bill = (
+    await db
+      .select()
+      .from(bills)
+      .where(and(eq(bills.id, billId), eq(bills.householdId, householdId)))
+      .limit(1)
+  )[0];
   if (!bill) throw notFound('Bill not found');
   return bill;
 }
 
 /** Load an occurrence and verify its parent bill belongs to the household. */
-function requireOccurrence(
+async function requireOccurrence(
   occurrenceId: number,
   householdId: number,
-): { occurrence: typeof billOccurrences.$inferSelect; bill: typeof bills.$inferSelect } {
-  const occurrence = db
-    .select()
-    .from(billOccurrences)
-    .where(eq(billOccurrences.id, occurrenceId))
-    .get();
+): Promise<{ occurrence: typeof billOccurrences.$inferSelect; bill: typeof bills.$inferSelect }> {
+  const occurrence = (
+    await db.select().from(billOccurrences).where(eq(billOccurrences.id, occurrenceId)).limit(1)
+  )[0];
   if (!occurrence) throw notFound('Occurrence not found');
-  const bill = requireBill(occurrence.billId, householdId);
+  const bill = await requireBill(occurrence.billId, householdId);
   return { occurrence, bill };
 }
 
@@ -91,20 +94,15 @@ const billsRoutes: FastifyPluginAsync = async (app) => {
   // List bills with their occurrences for the household.
   app.get('/', async (req, reply) => {
     const { householdId } = requireSession(req);
-    const billRows = db
-      .select()
-      .from(bills)
-      .where(eq(bills.householdId, householdId))
-      .all();
+    const billRows = await db.select().from(bills).where(eq(bills.householdId, householdId));
 
     const ids = billRows.map((b) => b.id);
     const occRows = ids.length
-      ? db
+      ? await db
           .select()
           .from(billOccurrences)
           .where(inArray(billOccurrences.billId, ids))
           .orderBy(asc(billOccurrences.dueDate))
-          .all()
       : [];
 
     const byBill = new Map<number, BillOccurrence[]>();
@@ -129,7 +127,7 @@ const billsRoutes: FastifyPluginAsync = async (app) => {
     const from = q.from ?? today;
     const to = q.to ?? addDays(today, 56); // ~8 weeks
 
-    const rows = db
+    const rows = await db
       .select({
         id: billOccurrences.id,
         billId: billOccurrences.billId,
@@ -149,8 +147,7 @@ const billsRoutes: FastifyPluginAsync = async (app) => {
           lte(billOccurrences.dueDate, to),
         ),
       )
-      .orderBy(asc(billOccurrences.dueDate))
-      .all();
+      .orderBy(asc(billOccurrences.dueDate));
 
     return reply.send({ data: rows });
   });
@@ -159,18 +156,19 @@ const billsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/', async (req, reply) => {
     const { householdId } = requireSession(req);
     const body = billBody.parse(req.body);
-    const row = db
-      .insert(bills)
-      .values({
-        householdId,
-        name: body.name,
-        categoryId: body.categoryId ?? null,
-        recurrence: body.recurrence,
-        typicalDay: body.typicalDay ?? null,
-        note: body.note ?? null,
-      })
-      .returning()
-      .get();
+    const row = (
+      await db
+        .insert(bills)
+        .values({
+          householdId,
+          name: body.name,
+          categoryId: body.categoryId ?? null,
+          recurrence: body.recurrence,
+          typicalDay: body.typicalDay ?? null,
+          note: body.note ?? null,
+        })
+        .returning()
+    )[0];
     return reply.code(201).send({ data: billToDto(row) });
   });
 
@@ -179,18 +177,19 @@ const billsRoutes: FastifyPluginAsync = async (app) => {
     const { householdId } = requireSession(req);
     const id = Number((req.params as { id: string }).id);
     const body = billBody.parse(req.body);
-    const row = db
-      .update(bills)
-      .set({
-        name: body.name,
-        categoryId: body.categoryId ?? null,
-        recurrence: body.recurrence,
-        typicalDay: body.typicalDay ?? null,
-        note: body.note ?? null,
-      })
-      .where(and(eq(bills.id, id), eq(bills.householdId, householdId)))
-      .returning()
-      .get();
+    const row = (
+      await db
+        .update(bills)
+        .set({
+          name: body.name,
+          categoryId: body.categoryId ?? null,
+          recurrence: body.recurrence,
+          typicalDay: body.typicalDay ?? null,
+          note: body.note ?? null,
+        })
+        .where(and(eq(bills.id, id), eq(bills.householdId, householdId)))
+        .returning()
+    )[0];
     if (!row) throw notFound('Bill not found');
     return reply.send({ data: billToDto(row) });
   });
@@ -199,14 +198,16 @@ const billsRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/:id', async (req, reply) => {
     const { householdId } = requireSession(req);
     const id = Number((req.params as { id: string }).id);
-    const bill = db
-      .select()
-      .from(bills)
-      .where(and(eq(bills.id, id), eq(bills.householdId, householdId)))
-      .get();
+    const bill = (
+      await db
+        .select()
+        .from(bills)
+        .where(and(eq(bills.id, id), eq(bills.householdId, householdId)))
+        .limit(1)
+    )[0];
     if (!bill) throw notFound('Bill not found');
-    db.delete(billOccurrences).where(eq(billOccurrences.billId, id)).run();
-    db.delete(bills).where(eq(bills.id, id)).run();
+    await db.delete(billOccurrences).where(eq(billOccurrences.billId, id));
+    await db.delete(bills).where(eq(bills.id, id));
     return reply.send({ data: { ok: true } });
   });
 
@@ -214,9 +215,9 @@ const billsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/:id/occurrences', async (req, reply) => {
     const { householdId } = requireSession(req);
     const billId = Number((req.params as { id: string }).id);
-    requireBill(billId, householdId);
+    await requireBill(billId, householdId);
     const body = addOccurrencesBody.parse(req.body);
-    const rows = db
+    const rows = await db
       .insert(billOccurrences)
       .values(
         body.occurrences.map((o) => ({
@@ -225,8 +226,7 @@ const billsRoutes: FastifyPluginAsync = async (app) => {
           amountCents: o.amountCents,
         })),
       )
-      .returning()
-      .all();
+      .returning();
     return reply.code(201).send({ data: rows.map(occurrenceToDto) });
   });
 
@@ -234,19 +234,16 @@ const billsRoutes: FastifyPluginAsync = async (app) => {
   app.put('/occurrences/:id', async (req, reply) => {
     const { householdId } = requireSession(req);
     const id = Number((req.params as { id: string }).id);
-    requireOccurrence(id, householdId);
+    await requireOccurrence(id, householdId);
     const body = updateOccurrenceBody.parse(req.body);
     const patch: Partial<typeof billOccurrences.$inferInsert> = {};
     if (body.dueDate !== undefined) patch.dueDate = body.dueDate;
     if (body.amountCents !== undefined) patch.amountCents = body.amountCents;
     if (body.paid !== undefined) patch.paid = body.paid;
     if (Object.keys(patch).length === 0) throw badRequest('No fields to update');
-    const row = db
-      .update(billOccurrences)
-      .set(patch)
-      .where(eq(billOccurrences.id, id))
-      .returning()
-      .get();
+    const row = (
+      await db.update(billOccurrences).set(patch).where(eq(billOccurrences.id, id)).returning()
+    )[0];
     return reply.send({ data: occurrenceToDto(row) });
   });
 
@@ -254,39 +251,43 @@ const billsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/occurrences/:id/pay', async (req, reply) => {
     const { householdId } = requireSession(req);
     const id = Number((req.params as { id: string }).id);
-    const { occurrence, bill } = requireOccurrence(id, householdId);
+    const { occurrence, bill } = await requireOccurrence(id, householdId);
     const body = payBody.parse(req.body);
 
     // Verify the account belongs to the household.
-    const account = db
-      .select()
-      .from(accounts)
-      .where(and(eq(accounts.id, body.accountId), eq(accounts.householdId, householdId)))
-      .get();
+    const account = (
+      await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, body.accountId), eq(accounts.householdId, householdId)))
+        .limit(1)
+    )[0];
     if (!account) throw notFound('Account not found');
 
-    const entry = db
-      .insert(ledgerEntries)
-      .values({
-        householdId,
-        accountId: body.accountId,
-        entryDate: occurrence.dueDate,
-        payee: bill.name,
-        categoryId: bill.categoryId,
-        amountCents: occurrence.amountCents,
-        direction: 'debit',
-        cleared: false,
-        source: 'manual',
-      })
-      .returning()
-      .get();
+    const entry = (
+      await db
+        .insert(ledgerEntries)
+        .values({
+          householdId,
+          accountId: body.accountId,
+          entryDate: occurrence.dueDate,
+          payee: bill.name,
+          categoryId: bill.categoryId,
+          amountCents: occurrence.amountCents,
+          direction: 'debit',
+          cleared: false,
+          source: 'manual',
+        })
+        .returning()
+    )[0];
 
-    const updated = db
-      .update(billOccurrences)
-      .set({ paid: true, ledgerEntryId: entry.id })
-      .where(eq(billOccurrences.id, id))
-      .returning()
-      .get();
+    const updated = (
+      await db
+        .update(billOccurrences)
+        .set({ paid: true, ledgerEntryId: entry.id })
+        .where(eq(billOccurrences.id, id))
+        .returning()
+    )[0];
 
     return reply.send({ data: occurrenceToDto(updated) });
   });

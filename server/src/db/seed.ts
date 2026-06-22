@@ -7,7 +7,7 @@
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { weeklyPeriod, toISODate } from '@buddy/shared';
-import { db, sqlite } from './index.js';
+import { db, closeDb } from './index.js';
 import { households, users, householdMembers, accounts, categories } from './schema.js';
 
 type Kind = 'income' | 'expense';
@@ -41,8 +41,8 @@ const CATEGORY_SEED: Array<{ group: string; kind: Kind; names: string[] }> = [
 const DEMO_EMAIL = 'demo@buddy.local';
 const DEMO_PASSWORD = 'password123';
 
-function seed() {
-  const existing = db.select().from(users).where(eq(users.email, DEMO_EMAIL)).get();
+async function seed() {
+  const existing = (await db.select().from(users).where(eq(users.email, DEMO_EMAIL)).limit(1))[0];
   if (existing) {
     console.log('Demo data already present — skipping seed.');
     return;
@@ -51,50 +51,48 @@ function seed() {
   const todayIso = toISODate(new Date());
   const week = weeklyPeriod(todayIso);
 
-  db.transaction((tx) => {
-    const household = tx
-      .insert(households)
-      .values({
-        name: 'Demo Household',
-        periodLength: 'weekly',
-        periodAnchorDate: week.startDate,
-        periodCustomDays: null,
-      })
-      .returning()
-      .get();
+  await db.transaction(async (tx) => {
+    const household = (
+      await tx
+        .insert(households)
+        .values({
+          name: 'Demo Household',
+          periodLength: 'weekly',
+          periodAnchorDate: week.startDate,
+          periodCustomDays: null,
+        })
+        .returning()
+    )[0];
 
     const passwordHash = bcrypt.hashSync(DEMO_PASSWORD, 10);
-    const user = tx
-      .insert(users)
-      .values({ email: DEMO_EMAIL, passwordHash, displayName: 'Demo User', isAdmin: true })
-      .returning()
-      .get();
+    const user = (
+      await tx
+        .insert(users)
+        .values({ email: DEMO_EMAIL, passwordHash, displayName: 'Demo User', isAdmin: true })
+        .returning()
+    )[0];
 
-    tx.insert(householdMembers)
-      .values({ householdId: household.id, userId: user.id, role: 'owner' })
-      .run();
+    await tx
+      .insert(householdMembers)
+      .values({ householdId: household.id, userId: user.id, role: 'owner' });
 
-    tx.insert(accounts)
-      .values({
-        householdId: household.id,
-        name: 'Checking',
-        type: 'checking',
-        openingBalanceCents: 0,
-      })
-      .run();
+    await tx.insert(accounts).values({
+      householdId: household.id,
+      name: 'Checking',
+      type: 'checking',
+      openingBalanceCents: 0,
+    });
 
     let sortOrder = 0;
     for (const grp of CATEGORY_SEED) {
       for (const name of grp.names) {
-        tx.insert(categories)
-          .values({
-            householdId: household.id,
-            groupName: grp.group,
-            name,
-            kind: grp.kind,
-            sortOrder: sortOrder++,
-          })
-          .run();
+        await tx.insert(categories).values({
+          householdId: household.id,
+          groupName: grp.group,
+          name,
+          kind: grp.kind,
+          sortOrder: sortOrder++,
+        });
       }
     }
 
@@ -104,5 +102,5 @@ function seed() {
   });
 }
 
-seed();
-sqlite.close();
+await seed();
+await closeDb();

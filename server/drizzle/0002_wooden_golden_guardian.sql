@@ -1,1 +1,0 @@
-ALTER TABLE `imports` ADD `confirmed_at` text;

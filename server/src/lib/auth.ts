@@ -32,41 +32,48 @@ export function requireSession(req: FastifyRequest): SessionData {
 }
 
 /** True if the user is a global admin (may create households). */
-export function isAdminUser(userId: number): boolean {
-  const row = db.select({ isAdmin: users.isAdmin }).from(users).where(eq(users.id, userId)).get();
+export async function isAdminUser(userId: number): Promise<boolean> {
+  const row = (
+    await db.select({ isAdmin: users.isAdmin }).from(users).where(eq(users.id, userId)).limit(1)
+  )[0];
   return !!row?.isAdmin;
 }
 
 /** The user's role in a household, or null if not a member. */
-export function roleInHousehold(userId: number, householdId: number): 'owner' | 'member' | null {
-  const row = db
-    .select({ role: householdMembers.role })
-    .from(householdMembers)
-    .where(and(eq(householdMembers.userId, userId), eq(householdMembers.householdId, householdId)))
-    .get();
+export async function roleInHousehold(
+  userId: number,
+  householdId: number,
+): Promise<'owner' | 'member' | null> {
+  const row = (
+    await db
+      .select({ role: householdMembers.role })
+      .from(householdMembers)
+      .where(and(eq(householdMembers.userId, userId), eq(householdMembers.householdId, householdId)))
+      .limit(1)
+  )[0];
   return (row?.role as 'owner' | 'member' | undefined) ?? null;
 }
 
 /** True if the user is a member of the household. */
-export function isMember(userId: number, householdId: number): boolean {
-  return roleInHousehold(userId, householdId) !== null;
+export async function isMember(userId: number, householdId: number): Promise<boolean> {
+  return (await roleInHousehold(userId, householdId)) !== null;
 }
 
 /** True if the user is the household admin (owner) of the household. */
-export function isHouseholdAdmin(userId: number, householdId: number): boolean {
-  return roleInHousehold(userId, householdId) === 'owner';
+export async function isHouseholdAdmin(userId: number, householdId: number): Promise<boolean> {
+  return (await roleInHousehold(userId, householdId)) === 'owner';
 }
 
 /** Throw 403 unless the user is the household admin (owner) of the household. */
-export function requireHouseholdAdmin(userId: number, householdId: number): void {
-  if (!isHouseholdAdmin(userId, householdId)) {
+export async function requireHouseholdAdmin(userId: number, householdId: number): Promise<void> {
+  if (!(await isHouseholdAdmin(userId, householdId))) {
     throw forbidden('Only the household admin can change household settings');
   }
 }
 
 /** Throw 403 unless the user is a global (system) admin. */
-export function requireSystemAdmin(userId: number): void {
-  if (!isAdminUser(userId)) throw forbidden('System admin only');
+export async function requireSystemAdmin(userId: number): Promise<void> {
+  if (!(await isAdminUser(userId))) throw forbidden('System admin only');
 }
 
 /**
@@ -77,17 +84,15 @@ export function requireSystemAdmin(userId: number): void {
  */
 export async function authGuard(req: FastifyRequest): Promise<void> {
   const { userId, householdId } = requireSession(req);
-  if (!isMember(userId, householdId)) {
+  if (!(await isMember(userId, householdId))) {
     throw forbidden('Not a member of this household');
   }
 }
 
 /** The household the user currently belongs to (first membership). */
-export function householdIdForUser(userId: number): number | null {
-  const row = db
-    .select()
-    .from(householdMembers)
-    .where(eq(householdMembers.userId, userId))
-    .get();
+export async function householdIdForUser(userId: number): Promise<number | null> {
+  const row = (
+    await db.select().from(householdMembers).where(eq(householdMembers.userId, userId)).limit(1)
+  )[0];
   return row?.householdId ?? null;
 }

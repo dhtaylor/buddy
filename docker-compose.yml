@@ -1,20 +1,46 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: buddy-db
+    environment:
+      POSTGRES_USER: buddy
+      POSTGRES_PASSWORD: buddy
+      POSTGRES_DB: buddy
+    ports:
+      # Bound to localhost only (for host-side `npm run dev`); not exposed on the LAN.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # Persist the Postgres data directory across restarts (named volume).
+      - buddy-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buddy -d buddy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   buddy:
     build: .
     container_name: buddy
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
       NODE_ENV: production
       PORT: "8080"
       HOST: 0.0.0.0
-      DATABASE_PATH: /data/buddy.sqlite
+      DATABASE_URL: postgres://buddy:buddy@db:5432/buddy
       WEB_DIST_PATH: /app/web/dist
-      # IMPORTANT for production: set a real 64-hex-char key (openssl rand -hex 32).
+      BACKUP_DIR: /backups
+      # IMPORTANT for production: set a real 64-hex key (openssl rand -hex 32).
       # SESSION_KEY: "<64 hex chars>"
+      # COOKIE_SECURE: "true"   # set when served over HTTPS
     volumes:
-      # Persist the SQLite database file across container restarts.
-      - ./data:/data
-      # Folder for scheduled SQLite backups (Phase 6).
+      # Folder for pg_dump backups (System Settings → Backups, or `npm run backup`).
       - ./backups:/backups
     restart: unless-stopped
+
+volumes:
+  buddy-pgdata:

@@ -4,12 +4,8 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
-# Install build toolchain for better-sqlite3 native module.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make g++ \
-  && rm -rf /var/lib/apt/lists/*
-
 # Install all workspace deps (root + shared + server + web).
+# (No native build toolchain needed — Postgres driver + PGlite are pure JS/WASM.)
 COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
 COPY server/package.json ./server/
@@ -26,13 +22,18 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV HOST=0.0.0.0
-ENV DATABASE_PATH=/data/buddy.sqlite
 ENV WEB_DIST_PATH=/app/web/dist
+ENV BACKUP_DIR=/backups
+
+# postgresql-client provides pg_dump for in-app backups.
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy the whole built tree (simple + reliable for a small home app).
 COPY --from=build /app /app
 
-# Apply migrations + seed on first boot, then start the server.
-RUN mkdir -p /data
+RUN mkdir -p /backups
 EXPOSE 8080
-CMD ["sh", "-c", "npm run db:migrate && npm run seed; node server/dist/index.js"]
+# Apply migrations on boot, then start. (Register the first user to bootstrap the
+# admin; or run `npm run seed` once for demo data.)
+CMD ["sh", "-c", "npm run db:migrate && node server/dist/index.js"]

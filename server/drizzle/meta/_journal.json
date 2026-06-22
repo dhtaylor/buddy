@@ -1,33 +1,12 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "6",
-      "when": 1781905015671,
-      "tag": "0000_previous_ricochet",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1781909091955,
-      "tag": "0001_fair_red_hulk",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1781910391860,
-      "tag": "0002_wooden_golden_guardian",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1781923189297,
-      "tag": "0003_ordinary_union_jack",
+      "version": "7",
+      "when": 1781982541396,
+      "tag": "0000_tough_sauron",
       "breakpoints": true
     }
   ]

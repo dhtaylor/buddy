@@ -94,11 +94,10 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
     const q = req.query as { accountId?: string; from?: string; to?: string };
 
     // Opening balances for every household account (running balance is per account).
-    const accountRows = db
+    const accountRows = await db
       .select()
       .from(accounts)
-      .where(eq(accounts.householdId, householdId))
-      .all();
+      .where(eq(accounts.householdId, householdId));
     const openingByAccount = new Map<number, number>(
       accountRows.map((a) => [a.id, a.openingBalanceCents]),
     );
@@ -111,12 +110,11 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
       where.push(eq(ledgerEntries.accountId, Number(q.accountId)));
     }
 
-    const rows = db
+    const rows = await db
       .select()
       .from(ledgerEntries)
       .where(and(...where))
-      .orderBy(asc(ledgerEntries.entryDate), asc(ledgerEntries.id))
-      .all();
+      .orderBy(asc(ledgerEntries.entryDate), asc(ledgerEntries.id));
 
     const withBalance = computeRunningBalances(rows.map(toDto), openingByAccount);
 
@@ -135,18 +133,16 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
   app.get('/balance', async (req, reply) => {
     const { householdId } = requireSession(req);
 
-    const accountRows = db
+    const accountRows = await db
       .select()
       .from(accounts)
-      .where(eq(accounts.householdId, householdId))
-      .all();
+      .where(eq(accounts.householdId, householdId));
     const openingSum = accountRows.reduce((s, a) => s + a.openingBalanceCents, 0);
 
-    const rows = db
+    const rows = await db
       .select()
       .from(ledgerEntries)
-      .where(eq(ledgerEntries.householdId, householdId))
-      .all();
+      .where(eq(ledgerEntries.householdId, householdId));
 
     let recordedCents = openingSum;
     let clearedCents = openingSum;
@@ -164,30 +160,33 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
     const { householdId } = requireSession(req);
     const body = entryBody.parse(req.body);
 
-    const account = db
-      .select()
-      .from(accounts)
-      .where(and(eq(accounts.id, body.accountId), eq(accounts.householdId, householdId)))
-      .get();
+    const account = (
+      await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, body.accountId), eq(accounts.householdId, householdId)))
+        .limit(1)
+    )[0];
     if (!account) throw badRequest('Account does not belong to this household');
 
-    const row = db
-      .insert(ledgerEntries)
-      .values({
-        householdId,
-        accountId: body.accountId,
-        entryDate: body.entryDate,
-        payee: body.payee,
-        categoryId: body.categoryId ?? null,
-        amountCents: body.amountCents,
-        direction: body.direction,
-        cleared: body.cleared ?? false,
-        clearedDate: body.clearedDate ?? null,
-        source: 'manual',
-        note: body.note ?? null,
-      })
-      .returning()
-      .get();
+    const row = (
+      await db
+        .insert(ledgerEntries)
+        .values({
+          householdId,
+          accountId: body.accountId,
+          entryDate: body.entryDate,
+          payee: body.payee,
+          categoryId: body.categoryId ?? null,
+          amountCents: body.amountCents,
+          direction: body.direction,
+          cleared: body.cleared ?? false,
+          clearedDate: body.clearedDate ?? null,
+          source: 'manual',
+          note: body.note ?? null,
+        })
+        .returning()
+    )[0];
 
     return reply.code(201).send({ data: toDto(row) });
   });
@@ -198,29 +197,32 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
     const id = Number((req.params as { id: string }).id);
     const body = entryBody.parse(req.body);
 
-    const account = db
-      .select()
-      .from(accounts)
-      .where(and(eq(accounts.id, body.accountId), eq(accounts.householdId, householdId)))
-      .get();
+    const account = (
+      await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, body.accountId), eq(accounts.householdId, householdId)))
+        .limit(1)
+    )[0];
     if (!account) throw badRequest('Account does not belong to this household');
 
-    const row = db
-      .update(ledgerEntries)
-      .set({
-        accountId: body.accountId,
-        entryDate: body.entryDate,
-        payee: body.payee,
-        categoryId: body.categoryId ?? null,
-        amountCents: body.amountCents,
-        direction: body.direction,
-        cleared: body.cleared ?? false,
-        clearedDate: body.clearedDate ?? null,
-        note: body.note ?? null,
-      })
-      .where(and(eq(ledgerEntries.id, id), eq(ledgerEntries.householdId, householdId)))
-      .returning()
-      .get();
+    const row = (
+      await db
+        .update(ledgerEntries)
+        .set({
+          accountId: body.accountId,
+          entryDate: body.entryDate,
+          payee: body.payee,
+          categoryId: body.categoryId ?? null,
+          amountCents: body.amountCents,
+          direction: body.direction,
+          cleared: body.cleared ?? false,
+          clearedDate: body.clearedDate ?? null,
+          note: body.note ?? null,
+        })
+        .where(and(eq(ledgerEntries.id, id), eq(ledgerEntries.householdId, householdId)))
+        .returning()
+    )[0];
     if (!row) throw notFound('Ledger entry not found');
 
     return reply.send({ data: toDto(row) });
@@ -230,11 +232,12 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
   app.delete('/:id', async (req, reply) => {
     const { householdId } = requireSession(req);
     const id = Number((req.params as { id: string }).id);
-    const row = db
-      .delete(ledgerEntries)
-      .where(and(eq(ledgerEntries.id, id), eq(ledgerEntries.householdId, householdId)))
-      .returning()
-      .get();
+    const row = (
+      await db
+        .delete(ledgerEntries)
+        .where(and(eq(ledgerEntries.id, id), eq(ledgerEntries.householdId, householdId)))
+        .returning()
+    )[0];
     if (!row) throw notFound('Ledger entry not found');
     return reply.send({ data: { ok: true } });
   });
@@ -245,21 +248,23 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
     const { ids, categoryId } = bulkCategorizeBody.parse(req.body);
 
     if (categoryId !== null) {
-      const cat = db
-        .select()
-        .from(categories)
-        .where(and(eq(categories.id, categoryId), eq(categories.householdId, householdId)))
-        .get();
+      const cat = (
+        await db
+          .select()
+          .from(categories)
+          .where(and(eq(categories.id, categoryId), eq(categories.householdId, householdId)))
+          .limit(1)
+      )[0];
       if (!cat) throw badRequest('Category does not belong to this household');
     }
 
-    const res = db
+    const res = await db
       .update(ledgerEntries)
       .set({ categoryId })
       .where(and(eq(ledgerEntries.householdId, householdId), inArray(ledgerEntries.id, ids)))
-      .run();
+      .returning();
 
-    return reply.send({ data: { updated: res.changes } });
+    return reply.send({ data: { updated: res.length } });
   });
 
   // PATCH /:id/cleared -> toggle cleared (+ set/clear clearedDate).
@@ -272,15 +277,16 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
       const id = Number((req.params as { id: string }).id);
       const body = clearedBody.parse(req.body);
 
-      const row = db
-        .update(ledgerEntries)
-        .set({
-          cleared: body.cleared,
-          clearedDate: body.cleared ? body.clearedDate ?? null : null,
-        })
-        .where(and(eq(ledgerEntries.id, id), eq(ledgerEntries.householdId, householdId)))
-        .returning()
-        .get();
+      const row = (
+        await db
+          .update(ledgerEntries)
+          .set({
+            cleared: body.cleared,
+            clearedDate: body.cleared ? body.clearedDate ?? null : null,
+          })
+          .where(and(eq(ledgerEntries.id, id), eq(ledgerEntries.householdId, householdId)))
+          .returning()
+      )[0];
       if (!row) throw notFound('Ledger entry not found');
 
       return reply.send({ data: toDto(row) });

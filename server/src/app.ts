@@ -57,7 +57,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       path: '/',
       httpOnly: true,
       sameSite: 'lax',
-      secure: false, // LAN over http; harden when public
+      secure: config.cookieSecure, // true in production / behind HTTPS
       maxAge: 60 * 60 * 24 * 30, // 30 days
     },
   });

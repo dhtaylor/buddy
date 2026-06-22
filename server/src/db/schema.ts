@@ -1,40 +1,38 @@
 /**
- * Buddy database schema (Drizzle / SQLite).
+ * Buddy database schema (Drizzle / PostgreSQL).
  *
  * Conventions:
  * - All money columns are INTEGER CENTS (suffix `_cents`).
- * - All date columns are TEXT ISO "YYYY-MM-DD" (no time).
- * - Booleans are INTEGER 0/1 via `{ mode: 'boolean' }`.
+ * - Calendar date columns are TEXT ISO "YYYY-MM-DD" (no time); datetimes
+ *   (imported_at, confirmed_at) are TEXT ISO-8601 — kept as text for portability.
+ * - Booleans are native Postgres `boolean`.
  * - Every domain table carries `household_id` for authorization scoping.
- * - Timestamps (imported_at, created_at) are TEXT ISO-8601 datetimes.
  */
 
-import { sqliteTable, integer, text, index } from 'drizzle-orm/sqlite-core';
+import { boolean, integer, index, pgTable, serial, text } from 'drizzle-orm/pg-core';
 
-export const households = sqliteTable('households', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
+export const households = pgTable('households', {
+  id: serial('id').primaryKey(),
   name: text('name').notNull(),
   // 'weekly' | 'biweekly' | 'monthly' | 'custom'
   periodLength: text('period_length').notNull().default('weekly'),
-  // ISO date anchoring period boundaries (Sun for Sun–Sat weeks).
   periodAnchorDate: text('period_anchor_date').notNull(),
-  // Only used when periodLength === 'custom'.
   periodCustomDays: integer('period_custom_days'),
 });
 
-export const users = sqliteTable('users', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   displayName: text('display_name').notNull(),
   // Global admin: may create new households. First registered user bootstraps as admin.
-  isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
+  isAdmin: boolean('is_admin').notNull().default(false),
 });
 
-export const householdMembers = sqliteTable(
+export const householdMembers = pgTable(
   'household_members',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     householdId: integer('household_id')
       .notNull()
       .references(() => households.id),
@@ -50,10 +48,10 @@ export const householdMembers = sqliteTable(
   }),
 );
 
-export const accounts = sqliteTable(
+export const accounts = pgTable(
   'accounts',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     householdId: integer('household_id')
       .notNull()
       .references(() => households.id),
@@ -67,10 +65,10 @@ export const accounts = sqliteTable(
   }),
 );
 
-export const categories = sqliteTable(
+export const categories = pgTable(
   'categories',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     householdId: integer('household_id')
       .notNull()
       .references(() => households.id),
@@ -81,17 +79,17 @@ export const categories = sqliteTable(
     sortOrder: integer('sort_order').notNull().default(0),
     // Hidden from the Budget page + new-entry pickers, but kept so past
     // transactions and History totals remain intact. Can be unhidden.
-    archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+    archived: boolean('archived').notNull().default(false),
   },
   (t) => ({
     byHousehold: index('categories_household_idx').on(t.householdId),
   }),
 );
 
-export const ledgerEntries = sqliteTable(
+export const ledgerEntries = pgTable(
   'ledger_entries',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     householdId: integer('household_id')
       .notNull()
       .references(() => households.id),
@@ -104,7 +102,7 @@ export const ledgerEntries = sqliteTable(
     amountCents: integer('amount_cents').notNull(),
     // 'debit' (money out) | 'credit' (money in)
     direction: text('direction').notNull(),
-    cleared: integer('cleared', { mode: 'boolean' }).notNull().default(false),
+    cleared: boolean('cleared').notNull().default(false),
     clearedDate: text('cleared_date'),
     // 'manual' | 'imported'
     source: text('source').notNull().default('manual'),
@@ -118,10 +116,10 @@ export const ledgerEntries = sqliteTable(
   }),
 );
 
-export const budgetPeriods = sqliteTable(
+export const budgetPeriods = pgTable(
   'budget_periods',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     householdId: integer('household_id')
       .notNull()
       .references(() => households.id),
@@ -134,10 +132,10 @@ export const budgetPeriods = sqliteTable(
   }),
 );
 
-export const budgetLines = sqliteTable(
+export const budgetLines = pgTable(
   'budget_lines',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     periodId: integer('period_id')
       .notNull()
       .references(() => budgetPeriods.id),
@@ -153,10 +151,10 @@ export const budgetLines = sqliteTable(
   }),
 );
 
-export const bills = sqliteTable(
+export const bills = pgTable(
   'bills',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     householdId: integer('household_id')
       .notNull()
       .references(() => households.id),
@@ -172,16 +170,16 @@ export const bills = sqliteTable(
   }),
 );
 
-export const billOccurrences = sqliteTable(
+export const billOccurrences = pgTable(
   'bill_occurrences',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     billId: integer('bill_id')
       .notNull()
       .references(() => bills.id),
     dueDate: text('due_date').notNull(),
     amountCents: integer('amount_cents').notNull(),
-    paid: integer('paid', { mode: 'boolean' }).notNull().default(false),
+    paid: boolean('paid').notNull().default(false),
     ledgerEntryId: integer('ledger_entry_id').references(() => ledgerEntries.id),
   },
   (t) => ({
@@ -190,10 +188,10 @@ export const billOccurrences = sqliteTable(
   }),
 );
 
-export const imports = sqliteTable(
+export const imports = pgTable(
   'imports',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     householdId: integer('household_id')
       .notNull()
       .references(() => households.id),
@@ -204,8 +202,7 @@ export const imports = sqliteTable(
     // 'csv' | 'ofx'
     sourceFormat: text('source_format').notNull(),
     importedAt: text('imported_at').notNull(),
-    // Set when the user confirms the import. Until then the staged rows are a
-    // draft: they do NOT count toward dedupe and can be discarded.
+    // Set when the user confirms the import; null = draft (excluded from dedupe).
     confirmedAt: text('confirmed_at'),
   },
   (t) => ({
@@ -213,10 +210,10 @@ export const imports = sqliteTable(
   }),
 );
 
-export const importedTransactions = sqliteTable(
+export const importedTransactions = pgTable(
   'imported_transactions',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     importId: integer('import_id')
       .notNull()
       .references(() => imports.id),

@@ -16,7 +16,7 @@ buddy/
 ├─ Dockerfile, docker-compose.yml, README.md, CONVENTIONS.md
 ├─ shared/                 # @buddy/shared — pure TS: types + money/date utils (NO deps on server/web)
 │  └─ src/ money.ts period.ts types.ts index.ts (+ *.test.ts)
-├─ server/                 # @buddy/server — Fastify + better-sqlite3 + Drizzle
+├─ server/                 # @buddy/server — Fastify + Postgres (Drizzle); PGlite in tests
 │  ├─ drizzle.config.ts, drizzle/ (generated migrations)
 │  └─ src/
 │     ├─ index.ts          # entry (listen 0.0.0.0:8080) — DO NOT EDIT
@@ -220,7 +220,7 @@ in `shared/src/types.ts`. Use enum string unions exactly as above.
 From the repo root:
 ```bash
 npm install            # once; all deps for all workspaces already declared
-npm run db:migrate     # apply migrations (creates ./data/buddy.sqlite)
+npm run db:migrate     # apply migrations to Postgres (DATABASE_URL; `docker compose up -d db` first)
 npm run seed           # demo household + 28 seeded categories (demo@buddy.local / password123)
 npm run dev            # builds shared, then runs server :8080 + web :5173 (proxies /api)
 npm run build          # builds shared -> server -> web (run before committing)
@@ -238,7 +238,7 @@ handle this for you.
 
 ## 11. Chosen libraries / decisions
 
-- **SQLite:** `better-sqlite3@^12` (synchronous; Node 22 + 24 prebuilt binaries — no compiler needed).
+- **Database:** PostgreSQL via Drizzle (`postgres`/postgres.js driver; async). Tests use in-process **PGlite** (`@electric-sql/pglite`) so no DB server is needed. All DB calls are `await`ed (no `.get()/.all()/.run()`).
 - **OFX (Phase 5):** `node-ofx-parser@^0.5.1` (pure JS). **CSV:** `papaparse`. Both installed server-side.
 - **Charts (History):** `recharts`.
 - **File upload (Import):** `@fastify/multipart` is registered globally; use `req.file()` / `req.parts()`.

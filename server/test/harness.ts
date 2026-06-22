@@ -14,12 +14,12 @@ export interface TestApp {
 export async function makeApp(): Promise<TestApp> {
   const dir = mkdtempSync(join(tmpdir(), 'buddy-test-'));
   process.env.NODE_ENV = 'test';
-  process.env.DATABASE_PATH = join(dir, 'test.sqlite');
+  process.env.DATABASE_DRIVER = 'pglite'; // in-process Postgres; fresh per test file
   process.env.BACKUP_DIR = join(dir, 'backups');
   process.env.WEB_DIST_PATH = join(dir, 'no-web'); // skip static serving
 
   const { runMigrations } = await import('../src/db/migrator.js');
-  runMigrations();
+  await runMigrations();
   const { buildApp } = await import('../src/app.js');
   const app = await buildApp();
 
@@ -29,8 +29,8 @@ export async function makeApp(): Promise<TestApp> {
     close: async () => {
       await app.close();
       try {
-        const { sqlite } = await import('../src/db/index.js');
-        sqlite.close();
+        const { closeDb } = await import('../src/db/index.js');
+        await closeDb();
       } catch {
         /* ignore */
       }

@@ -78,11 +78,9 @@ const historyRoutes: FastifyPluginAsync = async (app) => {
     const { householdId } = requireSession(req);
     const q = req.query as { from?: string; to?: string };
 
-    const household = db
-      .select()
-      .from(households)
-      .where(eq(households.id, householdId))
-      .get();
+    const household = (
+      await db.select().from(households).where(eq(households.id, householdId)).limit(1)
+    )[0];
     if (!household) throw notFound('Household not found');
 
     const length = household.periodLength as PeriodLength;
@@ -100,26 +98,27 @@ const historyRoutes: FastifyPluginAsync = async (app) => {
 
     // All expense categories for the household (so empty categories still appear
     // in a stable order, and we know each category's group).
-    const catRows = db
+    const catRows = await db
       .select()
       .from(categories)
       .where(and(eq(categories.householdId, householdId), eq(categories.kind, 'expense')))
-      .orderBy(asc(categories.groupName), asc(categories.sortOrder), asc(categories.name))
-      .all();
+      .orderBy(asc(categories.groupName), asc(categories.sortOrder), asc(categories.name));
 
     // Expense actuals = debit entries within the covered range.
     const rangeStart = periods.length ? periods[0].startDate : from;
     const rangeEnd = periods.length ? periods[periods.length - 1].endDate : to;
-    const entries = db
-      .select({
-        categoryId: ledgerEntries.categoryId,
-        entryDate: ledgerEntries.entryDate,
-        amountCents: ledgerEntries.amountCents,
-      })
-      .from(ledgerEntries)
-      .where(and(eq(ledgerEntries.householdId, householdId), eq(ledgerEntries.direction, 'debit')))
-      .all()
-      .filter((e) => e.entryDate >= rangeStart && e.entryDate <= rangeEnd);
+    const entries = (
+      await db
+        .select({
+          categoryId: ledgerEntries.categoryId,
+          entryDate: ledgerEntries.entryDate,
+          amountCents: ledgerEntries.amountCents,
+        })
+        .from(ledgerEntries)
+        .where(
+          and(eq(ledgerEntries.householdId, householdId), eq(ledgerEntries.direction, 'debit')),
+        )
+    ).filter((e) => e.entryDate >= rangeStart && e.entryDate <= rangeEnd);
 
     // Index periods by date for fast bucketing.
     const findPeriodIndex = (date: string): number =>
@@ -190,18 +189,18 @@ const historyRoutes: FastifyPluginAsync = async (app) => {
     const category =
       id === 0
         ? { id: 0, name: 'Uncategorized' }
-        : db
-            .select()
-            .from(categories)
-            .where(and(eq(categories.id, id), eq(categories.householdId, householdId)))
-            .get();
+        : (
+            await db
+              .select()
+              .from(categories)
+              .where(and(eq(categories.id, id), eq(categories.householdId, householdId)))
+              .limit(1)
+          )[0];
     if (!category) throw notFound('Category not found');
 
-    const household = db
-      .select()
-      .from(households)
-      .where(eq(households.id, householdId))
-      .get();
+    const household = (
+      await db.select().from(households).where(eq(households.id, householdId)).limit(1)
+    )[0];
     if (!household) throw notFound('Household not found');
 
     const length = household.periodLength as PeriodLength;
@@ -221,18 +220,18 @@ const historyRoutes: FastifyPluginAsync = async (app) => {
 
     const categoryFilter =
       id === 0 ? isNull(ledgerEntries.categoryId) : eq(ledgerEntries.categoryId, id);
-    const entries = db
-      .select({ entryDate: ledgerEntries.entryDate, amountCents: ledgerEntries.amountCents })
-      .from(ledgerEntries)
-      .where(
-        and(
-          eq(ledgerEntries.householdId, householdId),
-          eq(ledgerEntries.direction, 'debit'),
-          categoryFilter,
-        ),
-      )
-      .all()
-      .filter((e) => e.entryDate >= rangeStart && e.entryDate <= rangeEnd);
+    const entries = (
+      await db
+        .select({ entryDate: ledgerEntries.entryDate, amountCents: ledgerEntries.amountCents })
+        .from(ledgerEntries)
+        .where(
+          and(
+            eq(ledgerEntries.householdId, householdId),
+            eq(ledgerEntries.direction, 'debit'),
+            categoryFilter,
+          ),
+        )
+    ).filter((e) => e.entryDate >= rangeStart && e.entryDate <= rangeEnd);
 
     const amounts = new Array(periods.length).fill(0);
     for (const e of entries) {

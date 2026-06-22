@@ -60,8 +60,10 @@ function todayISO(): string {
 }
 
 /** The household's configured period containing `date`. */
-function householdPeriodFor(householdId: number, date: string): Period {
-  const hh = db.select().from(households).where(eq(households.id, householdId)).get();
+async function householdPeriodFor(householdId: number, date: string): Promise<Period> {
+  const hh = (
+    await db.select().from(households).where(eq(households.id, householdId)).limit(1)
+  )[0];
   if (!hh) throw notFound('Household not found');
   return periodFor(
     date,
@@ -75,30 +77,36 @@ function householdPeriodFor(householdId: number, date: string): Period {
  * Ensure a budget_period row exists for the period containing `date`, creating
  * it if missing. Returns the persisted row.
  */
-function ensurePeriod(householdId: number, date: string): typeof budgetPeriods.$inferSelect {
-  const period = householdPeriodFor(householdId, date);
-  const existing = db
-    .select()
-    .from(budgetPeriods)
-    .where(
-      and(
-        eq(budgetPeriods.householdId, householdId),
-        eq(budgetPeriods.startDate, period.startDate),
-        eq(budgetPeriods.endDate, period.endDate),
-      ),
-    )
-    .get();
+async function ensurePeriod(
+  householdId: number,
+  date: string,
+): Promise<typeof budgetPeriods.$inferSelect> {
+  const period = await householdPeriodFor(householdId, date);
+  const existing = (
+    await db
+      .select()
+      .from(budgetPeriods)
+      .where(
+        and(
+          eq(budgetPeriods.householdId, householdId),
+          eq(budgetPeriods.startDate, period.startDate),
+          eq(budgetPeriods.endDate, period.endDate),
+        ),
+      )
+      .limit(1)
+  )[0];
   if (existing) return existing;
-  return db
-    .insert(budgetPeriods)
-    .values({
-      householdId,
-      startDate: period.startDate,
-      endDate: period.endDate,
-      label: periodLabel(period),
-    })
-    .returning()
-    .get();
+  return (
+    await db
+      .insert(budgetPeriods)
+      .values({
+        householdId,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        label: periodLabel(period),
+      })
+      .returning()
+  )[0];
 }
 
 interface Totals {
@@ -124,23 +132,21 @@ interface BudgetLineDto {
  * (even with no budget_line yet), grouped by groupName preserving sortOrder,
  * with derived actuals and totals.
  */
-function buildBudget(householdId: number, period: typeof budgetPeriods.$inferSelect) {
+async function buildBudget(householdId: number, period: typeof budgetPeriods.$inferSelect) {
   // Archived categories are hidden from the Budget view (and thus its totals);
   // their past spend still surfaces in History.
-  const cats = db
+  const cats = await db
     .select()
     .from(categories)
-    .where(and(eq(categories.householdId, householdId), eq(categories.archived, false)))
-    .all();
+    .where(and(eq(categories.householdId, householdId), eq(categories.archived, false)));
 
-  const lines = db
+  const lines = await db
     .select()
     .from(budgetLines)
-    .where(eq(budgetLines.periodId, period.id))
-    .all();
+    .where(eq(budgetLines.periodId, period.id));
   const lineByCategory = new Map(lines.map((l) => [l.categoryId, l]));
 
-  const ledgerRows = db
+  const ledgerRows = await db
     .select({
       categoryId: ledgerEntries.categoryId,
       amountCents: ledgerEntries.amountCents,
@@ -153,8 +159,7 @@ function buildBudget(householdId: number, period: typeof budgetPeriods.$inferSel
         gte(ledgerEntries.entryDate, period.startDate),
         lte(ledgerEntries.entryDate, period.endDate),
       ),
-    )
-    .all();
+    );
 
   const kindByCategory = new Map(
     cats.map((c) => [c.id, c.kind as 'income' | 'expense']),
@@ -264,8 +269,8 @@ const budgetRoutes: FastifyPluginAsync = async (app) => {
   app.get('/', async (req, reply) => {
     const { householdId } = requireSession(req);
     const { date } = dateQuery.parse(req.query);
-    const period = ensurePeriod(householdId, date ?? todayISO());
-    const { totals, groups } = buildBudget(householdId, period);
+    const period = await ensurePeriod(householdId, date ?? todayISO());
+    const { totals, groups } = await buildBudget(householdId, period);
     return reply.send({
       data: {
         period: {
@@ -284,8 +289,8 @@ const budgetRoutes: FastifyPluginAsync = async (app) => {
   app.get('/summary', async (req, reply) => {
     const { householdId } = requireSession(req);
     const { date } = dateQuery.parse(req.query);
-    const period = ensurePeriod(householdId, date ?? todayISO());
-    const { totals } = buildBudget(householdId, period);
+    const period = await ensurePeriod(householdId, date ?? todayISO());
+    const { totals } = await buildBudget(householdId, period);
     return reply.send({
       data: {
         period: {
@@ -303,51 +308,59 @@ const budgetRoutes: FastifyPluginAsync = async (app) => {
     const { householdId } = requireSession(req);
     const body = lineBody.parse(req.body);
 
-    const period = db
-      .select()
-      .from(budgetPeriods)
-      .where(
-        and(eq(budgetPeriods.id, body.periodId), eq(budgetPeriods.householdId, householdId)),
-      )
-      .get();
+    const period = (
+      await db
+        .select()
+        .from(budgetPeriods)
+        .where(
+          and(eq(budgetPeriods.id, body.periodId), eq(budgetPeriods.householdId, householdId)),
+        )
+        .limit(1)
+    )[0];
     if (!period) throw notFound('Budget period not found');
 
-    const category = db
-      .select()
-      .from(categories)
-      .where(and(eq(categories.id, body.categoryId), eq(categories.householdId, householdId)))
-      .get();
+    const category = (
+      await db
+        .select()
+        .from(categories)
+        .where(and(eq(categories.id, body.categoryId), eq(categories.householdId, householdId)))
+        .limit(1)
+    )[0];
     if (!category) throw notFound('Category not found');
 
-    const existing = db
-      .select()
-      .from(budgetLines)
-      .where(
-        and(
-          eq(budgetLines.periodId, body.periodId),
-          eq(budgetLines.categoryId, body.categoryId),
-        ),
-      )
-      .get();
+    const existing = (
+      await db
+        .select()
+        .from(budgetLines)
+        .where(
+          and(
+            eq(budgetLines.periodId, body.periodId),
+            eq(budgetLines.categoryId, body.categoryId),
+          ),
+        )
+        .limit(1)
+    )[0];
 
     const dueDate = body.dueDate ?? null;
     const row = existing
-      ? db
-          .update(budgetLines)
-          .set({ plannedCents: body.plannedCents, dueDate })
-          .where(eq(budgetLines.id, existing.id))
-          .returning()
-          .get()
-      : db
-          .insert(budgetLines)
-          .values({
-            periodId: body.periodId,
-            categoryId: body.categoryId,
-            plannedCents: body.plannedCents,
-            dueDate,
-          })
-          .returning()
-          .get();
+      ? (
+          await db
+            .update(budgetLines)
+            .set({ plannedCents: body.plannedCents, dueDate })
+            .where(eq(budgetLines.id, existing.id))
+            .returning()
+        )[0]
+      : (
+          await db
+            .insert(budgetLines)
+            .values({
+              periodId: body.periodId,
+              categoryId: body.categoryId,
+              plannedCents: body.plannedCents,
+              dueDate,
+            })
+            .returning()
+        )[0];
 
     return reply.send({
       data: {
@@ -364,11 +377,10 @@ const budgetRoutes: FastifyPluginAsync = async (app) => {
   // All persisted periods for this household (period picker).
   app.get('/periods', async (req, reply) => {
     const { householdId } = requireSession(req);
-    const rows = db
+    const rows = await db
       .select()
       .from(budgetPeriods)
-      .where(eq(budgetPeriods.householdId, householdId))
-      .all();
+      .where(eq(budgetPeriods.householdId, householdId));
     rows.sort((a, b) => (a.startDate < b.startDate ? -1 : a.startDate > b.startDate ? 1 : 0));
     return reply.send({ data: rows });
   });
@@ -377,7 +389,7 @@ const budgetRoutes: FastifyPluginAsync = async (app) => {
   app.post('/period', async (req, reply) => {
     const { householdId } = requireSession(req);
     const { date } = dateQuery.parse(req.query);
-    const period = ensurePeriod(householdId, date ?? todayISO());
+    const period = await ensurePeriod(householdId, date ?? todayISO());
     return reply.send({ data: period });
   });
 };

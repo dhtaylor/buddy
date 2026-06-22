@@ -39,7 +39,7 @@ const householdRoutes: FastifyPluginAsync = async (app) => {
   // All households the caller belongs to (for the switcher).
   app.get('/mine', async (req, reply) => {
     const { userId } = requireSession(req);
-    const rows = db
+    const rows = await db
       .select({
         id: households.id,
         name: households.name,
@@ -51,8 +51,7 @@ const householdRoutes: FastifyPluginAsync = async (app) => {
       .from(householdMembers)
       .innerJoin(households, eq(households.id, householdMembers.householdId))
       .where(eq(householdMembers.userId, userId))
-      .orderBy(asc(households.name))
-      .all();
+      .orderBy(asc(households.name));
     const data = rows.map((r) => ({
       household: toDto(r),
       role: r.role as HouseholdMember['role'],
@@ -64,37 +63,38 @@ const householdRoutes: FastifyPluginAsync = async (app) => {
   app.post('/switch', async (req, reply) => {
     const { userId } = requireSession(req);
     const { householdId } = switchBody.parse(req.body);
-    if (!isMember(userId, householdId)) throw forbidden('Not a member of this household');
+    if (!(await isMember(userId, householdId))) throw forbidden('Not a member of this household');
     req.session.set('householdId', householdId);
-    const row = db.select().from(households).where(eq(households.id, householdId)).get();
+    const row = (await db.select().from(households).where(eq(households.id, householdId)))[0];
     if (!row) throw notFound('Household not found');
     return reply.send({ data: toDto(row) });
   });
 
   app.get('/', async (req, reply) => {
     const { householdId } = requireSession(req);
-    const row = db.select().from(households).where(eq(households.id, householdId)).get();
+    const row = (await db.select().from(households).where(eq(households.id, householdId)))[0];
     if (!row) throw notFound('Household not found');
     return reply.send({ data: toDto(row) });
   });
 
   app.put('/', async (req, reply) => {
     const { userId, householdId } = requireSession(req);
-    requireHouseholdAdmin(userId, householdId);
+    await requireHouseholdAdmin(userId, householdId);
     const body = updateBody.parse(req.body);
     if (body.periodLength === 'custom' && !body.periodCustomDays) {
       // allow if already set; otherwise require it
-      const current = db.select().from(households).where(eq(households.id, householdId)).get();
+      const current = (await db.select().from(households).where(eq(households.id, householdId)))[0];
       if (!current?.periodCustomDays) {
         throw badRequest('custom period requires periodCustomDays', 'missing_custom_days');
       }
     }
-    const row = db
-      .update(households)
-      .set(body)
-      .where(eq(households.id, householdId))
-      .returning()
-      .get();
+    const row = (
+      await db
+        .update(households)
+        .set(body)
+        .where(eq(households.id, householdId))
+        .returning()
+    )[0];
     if (!row) throw notFound('Household not found');
     return reply.send({ data: toDto(row) });
   });
@@ -102,7 +102,7 @@ const householdRoutes: FastifyPluginAsync = async (app) => {
   // Members of the caller's household (with user info).
   app.get('/members', async (req, reply) => {
     const { householdId } = requireSession(req);
-    const rows = db
+    const rows = await db
       .select({
         householdId: householdMembers.householdId,
         userId: householdMembers.userId,
@@ -112,8 +112,7 @@ const householdRoutes: FastifyPluginAsync = async (app) => {
       })
       .from(householdMembers)
       .innerJoin(users, eq(users.id, householdMembers.userId))
-      .where(eq(householdMembers.householdId, householdId))
-      .all();
+      .where(eq(householdMembers.householdId, householdId));
     const data = rows.map((r) => ({
       member: {
         householdId: r.householdId,
@@ -128,16 +127,17 @@ const householdRoutes: FastifyPluginAsync = async (app) => {
   // Remove a member from the caller's household (household admin only).
   app.delete('/members/:userId', async (req, reply) => {
     const { userId: callerId, householdId } = requireSession(req);
-    requireHouseholdAdmin(callerId, householdId);
+    await requireHouseholdAdmin(callerId, householdId);
     const target = Number((req.params as { userId: string }).userId);
     if (target === callerId) throw badRequest('You cannot remove yourself');
-    const row = db
-      .delete(householdMembers)
-      .where(
-        and(eq(householdMembers.householdId, householdId), eq(householdMembers.userId, target)),
-      )
-      .returning()
-      .get();
+    const row = (
+      await db
+        .delete(householdMembers)
+        .where(
+          and(eq(householdMembers.householdId, householdId), eq(householdMembers.userId, target)),
+        )
+        .returning()
+    )[0];
     if (!row) throw notFound('Member not found');
     return reply.send({ data: { ok: true } });
   });
