@@ -20,6 +20,8 @@ export interface HistoryByCategory {
   periods: HistoryPeriod[];
   categories: HistoryCategory[];
   totalsByGroup: { groupName: string; totalCents: number }[];
+  /** Budgeted (planned) expense total per period, aligned to `periods`. */
+  plannedPerPeriodCents: number[];
 }
 
 export interface CategoryHistoryPoint {
@@ -27,6 +29,8 @@ export interface CategoryHistoryPoint {
   startDate: string;
   endDate: string;
   amountCents: number;
+  /** Budgeted (planned) amount for this category in the period. */
+  plannedCents: number;
 }
 
 export interface CategoryHistory {

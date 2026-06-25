@@ -3,6 +3,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -18,6 +19,8 @@ import {
 
 /** Brand lavender, matching the Tailwind `brand` token used across the site. */
 const BRAND = '#7c5fce';
+/** Lighter lavender for the "budgeted" bars (vs solid brand for "spent"). */
+const BRAND_LIGHT = '#c9bce9';
 
 /** Default range: the last 8 weeks (56 days), ending today. */
 function defaultRange(): { from: string; to: string } {
@@ -104,25 +107,26 @@ function HistoryContent({
   );
 }
 
-/** Bar chart: total expense spend per period across the range. */
+/** Bar chart: budgeted vs actual expense spend per period across the range. */
 function SpendChart({ data }: { data: HistoryByCategory }) {
   const chartData = data.periods.map((p, i) => ({
     label: p.label,
-    total: fromCents(
-      data.categories.reduce((sum, c) => sum + (c.perPeriodCents[i] ?? 0), 0),
-    ),
+    budgeted: fromCents(data.plannedPerPeriodCents[i] ?? 0),
+    spent: fromCents(data.categories.reduce((sum, c) => sum + (c.perPeriodCents[i] ?? 0), 0)),
   }));
 
   return (
     <section className="card">
-      <h2 className="mb-2 text-lg font-semibold">Spend per period</h2>
-      <ResponsiveContainer width="100%" height={220}>
+      <h2 className="mb-2 text-lg font-semibold">Budgeted vs spent per period</h2>
+      <ResponsiveContainer width="100%" height={240}>
         <BarChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
           <YAxis tick={{ fontSize: 10 }} width={48} tickFormatter={(v) => `$${v}`} />
           <Tooltip formatter={(v: number) => formatCents(Math.round(v * 100))} />
-          <Bar dataKey="total" fill={BRAND} radius={[3, 3, 0, 0]} />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Bar dataKey="budgeted" name="Budgeted" fill={BRAND_LIGHT} radius={[3, 3, 0, 0]} />
+          <Bar dataKey="spent" name="Spent" fill={BRAND} radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </section>
@@ -246,7 +250,8 @@ function CategoryTrend({
 
   const chartData = (data?.points ?? []).map((p) => ({
     label: p.label,
-    amount: fromCents(p.amountCents),
+    budgeted: fromCents(p.plannedCents),
+    spent: fromCents(p.amountCents),
   }));
 
   return (
@@ -259,16 +264,18 @@ function CategoryTrend({
       </div>
       {isLoading ? (
         <p className="text-gray-500">Loading…</p>
-      ) : chartData.every((d) => d.amount === 0) ? (
-        <p className="text-gray-500">No spending in this range.</p>
+      ) : chartData.every((d) => d.spent === 0 && d.budgeted === 0) ? (
+        <p className="text-gray-500">No spending or budget in this range.</p>
       ) : (
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
             <YAxis tick={{ fontSize: 10 }} width={48} tickFormatter={(v) => `$${v}`} />
             <Tooltip formatter={(v: number) => formatCents(Math.round(v * 100))} />
-            <Bar dataKey="amount" fill={BRAND} radius={[3, 3, 0, 0]} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Bar dataKey="budgeted" name="Budgeted" fill={BRAND_LIGHT} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="spent" name="Spent" fill={BRAND} radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       )}

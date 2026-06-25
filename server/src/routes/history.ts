@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   addDays,
   periodFor,
@@ -9,7 +9,7 @@ import {
   type PeriodLength,
 } from '@buddy/shared';
 import { db } from '../db/index.js';
-import { categories, households, ledgerEntries } from '../db/schema.js';
+import { budgetLines, budgetPeriods, categories, households, ledgerEntries } from '../db/schema.js';
 import { authGuard, requireSession } from '../lib/auth.js';
 import { notFound } from '../lib/errors.js';
 
@@ -65,6 +65,49 @@ export function defaultRange(
     start = prev.startDate;
   }
   return { from: start, to: current.endDate };
+}
+
+/**
+ * Budgeted (planned) cents per history period, summed over the given (expense)
+ * category ids, via the matching budget_period rows. Budget periods are created
+ * lazily and matched to history periods by start date (both use the household's
+ * anchor/length, so boundaries align); periods never budgeted contribute 0.
+ * Returns an array aligned to `periods`.
+ */
+async function plannedExpensePerPeriod(
+  householdId: number,
+  periods: LabeledPeriod[],
+  categoryIds: Set<number>,
+): Promise<number[]> {
+  const result = new Array<number>(periods.length).fill(0);
+  if (categoryIds.size === 0) return result;
+
+  const periodRows = await db
+    .select({ id: budgetPeriods.id, startDate: budgetPeriods.startDate })
+    .from(budgetPeriods)
+    .where(eq(budgetPeriods.householdId, householdId));
+  const idxByPeriodId = new Map<number, number>();
+  for (const pr of periodRows) {
+    const i = periods.findIndex((p) => p.startDate === pr.startDate);
+    if (i >= 0) idxByPeriodId.set(pr.id, i);
+  }
+  const periodIds = [...idxByPeriodId.keys()];
+  if (periodIds.length === 0) return result;
+
+  const lines = await db
+    .select({
+      periodId: budgetLines.periodId,
+      categoryId: budgetLines.categoryId,
+      plannedCents: budgetLines.plannedCents,
+    })
+    .from(budgetLines)
+    .where(inArray(budgetLines.periodId, periodIds));
+  for (const l of lines) {
+    if (!categoryIds.has(l.categoryId)) continue;
+    const i = idxByPeriodId.get(l.periodId);
+    if (i != null) result[i] += l.plannedCents;
+  }
+  return result;
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -176,7 +219,18 @@ const historyRoutes: FastifyPluginAsync = async (app) => {
       totalCents,
     }));
 
-    return reply.send({ data: { periods, categories: categoriesOut, totalsByGroup } });
+    // Budgeted (planned) expense per period: sum of budget_lines.plannedCents for
+    // the matching budget period, expense categories only. Budget periods are
+    // created lazily, so periods that were never budgeted contribute 0.
+    const plannedPerPeriodCents = await plannedExpensePerPeriod(
+      householdId,
+      periods,
+      new Set(catRows.map((c) => c.id)),
+    );
+
+    return reply.send({
+      data: { periods, categories: categoriesOut, totalsByGroup, plannedPerPeriodCents },
+    });
   });
 
   // GET /category/:id ?from=&to=  -> time series of expense spend for one category.
@@ -239,11 +293,19 @@ const historyRoutes: FastifyPluginAsync = async (app) => {
       if (idx >= 0) amounts[idx] += e.amountCents;
     }
 
+    // Budgeted per period for this category (0 for the synthetic Uncategorized bucket).
+    const planned = await plannedExpensePerPeriod(
+      householdId,
+      periods,
+      id === 0 ? new Set() : new Set([id]),
+    );
+
     const points = periods.map((p, i) => ({
       label: p.label,
       startDate: p.startDate,
       endDate: p.endDate,
       amountCents: amounts[i],
+      plannedCents: planned[i],
     }));
 
     return reply.send({

@@ -148,3 +148,26 @@ describe('bills: split + mark paid → ledger', () => {
     expect(balAfter).toBe(balBefore - 3000);
   });
 });
+
+describe('history: budgeted vs spent', () => {
+  it('returns planned per period and per-category planned alongside spend', async () => {
+    // A fresh category, budgeted + partly spent in the current period.
+    const diningId = (await a.post('/api/categories', { groupName: 'Food', name: 'Dining', kind: 'expense' })).data.id;
+    const budget = (await a.get(`/api/budget?date=${today}`)).data;
+    await a.put('/api/budget/line', { periodId: budget.period.id, categoryId: diningId, plannedCents: 8000, dueDate: today });
+    await a.post('/api/ledger', { accountId, entryDate: today, payee: 'Cafe', categoryId: diningId, amountCents: 5000, direction: 'debit' });
+
+    const hist = (await a.get('/api/history/by-category')).data;
+    expect(Array.isArray(hist.plannedPerPeriodCents)).toBe(true);
+    expect(hist.plannedPerPeriodCents.length).toBe(hist.periods.length);
+    // The current period is the last bucket; its planned total includes our 8000.
+    const lastIdx = hist.periods.length - 1;
+    expect(hist.plannedPerPeriodCents[lastIdx]).toBeGreaterThanOrEqual(8000);
+
+    // Per-category drill-in carries plannedCents + spend on each point.
+    const cat = (await a.get(`/api/history/category/${diningId}`)).data;
+    const last = cat.points[cat.points.length - 1];
+    expect(last.plannedCents).toBe(8000);
+    expect(last.amountCents).toBe(5000);
+  });
+});
