@@ -50,6 +50,9 @@ export default function Home() {
         <Link to="/settings" className="btn-primary">
           Go to Settings
         </Link>
+        <Link to="/guide" className="text-sm text-brand underline">
+          New here? Read the getting-started guide
+        </Link>
       </div>
     );
   }

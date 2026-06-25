@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useHousehold, useMyHouseholds, useSwitchHousehold } from '../api/household.js';
 
 // Always-visible bar to see and switch the active household. Switching clears the
@@ -35,6 +36,13 @@ export default function HouseholdSwitcher() {
       ) : (
         <span className="flex-1 truncate text-sm font-semibold">{active.data.name}</span>
       )}
+      <Link
+        to="/guide"
+        aria-label="Help & getting-started guide"
+        className="shrink-0 rounded-full border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-500 active:bg-gray-100"
+      >
+        ? Help
+      </Link>
     </div>
   );
 }
