@@ -204,7 +204,7 @@ function HelocCard({ h }: { h: HelocSummary }) {
     <div className="card flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-gray-700">{h.name}</div>
-        <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-700">HELOC</span>
+        <span className="rounded bg-brand/10 px-1.5 text-xs font-medium text-brand">HELOC</span>
       </div>
 
       <div className="flex items-end justify-between">
@@ -225,7 +225,7 @@ function HelocCard({ h }: { h: HelocSummary }) {
       {h.creditLimitCents > 0 && (
         <div>
           <div className="h-2 w-full overflow-hidden rounded bg-gray-200">
-            <div className="h-full rounded bg-green-500" style={{ width: `${paidDownPct}%` }} />
+            <div className="h-full rounded bg-brand" style={{ width: `${paidDownPct}%` }} />
           </div>
           <div className="mt-1 text-xs text-gray-500">
             {paidDownPct}% of {formatCents(h.creditLimitCents)} limit available
@@ -249,13 +249,13 @@ function HelocCard({ h }: { h: HelocSummary }) {
       </div>
 
       {h.interestSavedCents !== null && (
-        <div className="rounded-lg bg-emerald-50 px-3 py-2 ring-1 ring-emerald-200">
-          <div className="text-xs text-emerald-700">Interest saved this period by sweeping</div>
-          <div className="text-2xl font-bold tabular-nums text-emerald-700">
+        <div className="rounded-lg bg-brand/5 px-3 py-2 ring-1 ring-brand/20">
+          <div className="text-xs text-brand">Interest saved this period by sweeping</div>
+          <div className="text-2xl font-bold tabular-nums text-brand">
             {formatCents(h.interestSavedCents)}
           </div>
           {h.periodInterestCents !== null && (
-            <div className="mt-0.5 text-xs text-emerald-700/80">
+            <div className="mt-0.5 text-xs text-brand/80">
               Accrued {formatCents(h.periodInterestCents)} vs.{' '}
               {formatCents(h.periodInterestCents + h.interestSavedCents)} without the sweep
             </div>
