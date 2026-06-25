@@ -251,7 +251,9 @@ function HouseholdForm({
         <span>
           Enable HELOC cash-sweep view
           <span className="block text-xs font-normal text-gray-500">
-            Shows cash vs. debt and a HELOC paydown card on Home. Doesn’t change your data.
+            Shows cash vs. debt and a HELOC paydown card on Home. Add a “HELOC /
+            Line of credit” account below, then record payments toward it as
+            credits (sweeps). Doesn’t change your data.
           </span>
         </span>
       </label>

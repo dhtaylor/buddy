@@ -6,6 +6,8 @@ Monorepo (npm workspaces): `shared/` (types + money/date utils), `server/` (Fast
 
 **Read [`CONVENTIONS.md`](./CONVENTIONS.md) for coding conventions and [`REQUIREMENTS.md`](./REQUIREMENTS.md) for the spec.**
 
+User guides: [`docs/heloc.md`](./docs/heloc.md) — the optional HELOC cash-sweep (velocity-banking) view.
+
 ## Prerequisites
 - Node 20+ and npm.
 - Docker Desktop (provides Postgres locally and runs the app in production).
