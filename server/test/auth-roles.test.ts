@@ -110,3 +110,79 @@ describe('household-settings gating (owner vs member)', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('profile self-service (update name, change password)', () => {
+  // A dedicated user so these mutations don't disturb the other suites.
+  beforeAll(async () => {
+    const a = admin();
+    await a.post('/api/auth/login', { email: 'admin@test.local', password: 'password123' });
+    await a.post('/api/auth/add-spouse', {
+      email: 'profile@test.local',
+      password: 'password123',
+      displayName: 'Pat',
+    });
+  });
+
+  const login = async () => {
+    const u = agent(ctx.app);
+    await u.post('/api/auth/login', { email: 'profile@test.local', password: 'password123' });
+    return u;
+  };
+
+  it('requires a session', async () => {
+    const anon = agent(ctx.app);
+    expect((await anon.put('/api/auth/me', { displayName: 'X' })).status).toBe(401);
+    expect(
+      (await anon.post('/api/auth/change-password', { currentPassword: 'a', newPassword: 'bbbbbbbb' }))
+        .status,
+    ).toBe(401);
+  });
+
+  it('updates own display name', async () => {
+    const u = await login();
+    const res = await u.put('/api/auth/me', { displayName: 'Patricia' });
+    expect(res.status).toBe(200);
+    expect(res.data.displayName).toBe('Patricia');
+    expect((await u.get('/api/auth/me')).data.displayName).toBe('Patricia');
+  });
+
+  it('rejects a wrong current password', async () => {
+    const u = await login();
+    const res = await u.post('/api/auth/change-password', {
+      currentPassword: 'wrong-password',
+      newPassword: 'newpassword1',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('invalid_password');
+  });
+
+  it('rejects a too-short new password', async () => {
+    const u = await login();
+    const res = await u.post('/api/auth/change-password', {
+      currentPassword: 'password123',
+      newPassword: 'short',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('changes the password; new one works and old one fails', async () => {
+    const u = await login();
+    const res = await u.post('/api/auth/change-password', {
+      currentPassword: 'password123',
+      newPassword: 'brandnew123',
+    });
+    expect(res.status).toBe(200);
+
+    const withNew = agent(ctx.app);
+    expect(
+      (await withNew.post('/api/auth/login', { email: 'profile@test.local', password: 'brandnew123' }))
+        .status,
+    ).toBe(200);
+
+    const withOld = agent(ctx.app);
+    expect(
+      (await withOld.post('/api/auth/login', { email: 'profile@test.local', password: 'password123' }))
+        .status,
+    ).toBe(401);
+  });
+});

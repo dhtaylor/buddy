@@ -27,6 +27,15 @@ const addSpouseBody = z.object({
   displayName: z.string().min(1),
 });
 
+const updateMeBody = z.object({
+  displayName: z.string().min(1),
+});
+
+const changePasswordBody = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+
 function toUserDto(row: {
   id: number;
   email: string;
@@ -145,6 +154,35 @@ const authRoutes: FastifyPluginAsync = async (app) => {
       throw unauthorized();
     }
     return reply.send({ data: toUserDto(user) });
+  });
+
+  // Update the logged-in user's own profile (currently just display name).
+  app.put('/me', async (req, reply) => {
+    const session = requireSession(req);
+    const body = updateMeBody.parse(req.body);
+    const updated = (
+      await db
+        .update(users)
+        .set({ displayName: body.displayName })
+        .where(eq(users.id, session.userId))
+        .returning()
+    )[0];
+    if (!updated) throw unauthorized();
+    return reply.send({ data: toUserDto(updated) });
+  });
+
+  // Change the logged-in user's own password (must confirm current password).
+  app.post('/change-password', async (req, reply) => {
+    const session = requireSession(req);
+    const body = changePasswordBody.parse(req.body);
+    const user = (await db.select().from(users).where(eq(users.id, session.userId)))[0];
+    if (!user) throw unauthorized();
+    if (!bcrypt.compareSync(body.currentPassword, user.passwordHash)) {
+      throw badRequest('Current password is incorrect', 'invalid_password');
+    }
+    const passwordHash = bcrypt.hashSync(body.newPassword, 10);
+    await db.update(users).set({ passwordHash }).where(eq(users.id, session.userId));
+    return reply.send({ data: { ok: true } });
   });
 };
 

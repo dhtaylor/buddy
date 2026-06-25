@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { formatCents, parseCents, type Account, type Category, type Household } from '@buddy/shared';
-import { useLogout } from '../api/auth.js';
 import {
   useAccounts,
   useCreateAccount,
@@ -37,7 +36,6 @@ function bpsToApr(bps: number | null): string {
 }
 
 export default function Settings() {
-  const logout = useLogout();
   const { data: user } = useCurrentUser();
   const active = useHousehold();
   const mine = useMyHouseholds();
@@ -47,12 +45,7 @@ export default function Settings() {
 
   return (
     <div className="flex flex-col gap-6 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <button className="btn-secondary" onClick={() => logout.mutate()}>
-          Log out
-        </button>
-      </div>
+      <h1 className="text-2xl font-bold">Settings</h1>
 
       <div className="flex flex-col gap-4">
         <h2 className="text-base font-bold uppercase tracking-wide text-gray-500">

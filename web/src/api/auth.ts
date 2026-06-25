@@ -63,3 +63,24 @@ export function useAddSpouse() {
       api.post<User>('/auth/add-spouse', vars),
   });
 }
+
+/** Update the logged-in user's own profile (display name). */
+export function useUpdateProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { displayName: string }) => api.put<User>('/auth/me', vars),
+    onSuccess: (user) => {
+      qc.setQueryData(['me'], user);
+      // The member list shows display names — refresh it.
+      qc.invalidateQueries({ queryKey: ['household', 'members'] });
+    },
+  });
+}
+
+/** Change the logged-in user's own password. */
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (vars: { currentPassword: string; newPassword: string }) =>
+      api.post<{ ok: true }>('/auth/change-password', vars),
+  });
+}

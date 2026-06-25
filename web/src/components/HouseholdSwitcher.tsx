@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { HelpCircle } from 'lucide-react';
 import { useHousehold, useMyHouseholds, useSwitchHousehold } from '../api/household.js';
+import ProfileMenu from './ProfileMenu.js';
 
 // Always-visible bar to see and switch the active household. Switching clears the
 // query cache so every screen reloads for the new household — data stays
@@ -45,6 +46,7 @@ export default function HouseholdSwitcher() {
         <HelpCircle size={14} aria-hidden="true" />
         Help
       </Link>
+      <ProfileMenu />
     </div>
   );
 }

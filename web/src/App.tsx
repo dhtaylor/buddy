@@ -14,6 +14,7 @@ import Import from './pages/Import.js';
 import History from './pages/History.js';
 import Settings from './pages/Settings.js';
 import Guide from './pages/Guide.js';
+import Profile from './pages/Profile.js';
 
 export default function App() {
   const { data: user, isLoading } = useCurrentUser();
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/history" element={<History />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/guide" element={<Guide />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
