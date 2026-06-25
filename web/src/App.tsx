@@ -1,5 +1,6 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useCurrentUser } from './api/auth.js';
+import { Spinner } from './components/Skeleton.js';
 import BottomNav from './components/BottomNav.js';
 import HouseholdSwitcher from './components/HouseholdSwitcher.js';
 import IdleLogout from './components/IdleLogout.js';
@@ -16,9 +17,14 @@ import Guide from './pages/Guide.js';
 
 export default function App() {
   const { data: user, isLoading } = useCurrentUser();
+  const location = useLocation();
 
   if (isLoading) {
-    return <div className="flex h-full items-center justify-center text-gray-400">Loading…</div>;
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
   }
 
   if (!user) {
@@ -28,7 +34,8 @@ export default function App() {
   return (
     <div className="mx-auto flex min-h-full max-w-screen-sm flex-col">
       <HouseholdSwitcher />
-      <main className="flex-1 pb-20">
+      {/* key on pathname so each navigation re-triggers the fade-in. */}
+      <main key={location.pathname} className="flex-1 pb-20 animate-in">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/ledger" element={<Ledger />} />

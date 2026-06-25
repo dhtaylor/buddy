@@ -6,6 +6,9 @@ import {
   periodFor,
 } from '@buddy/shared';
 import type { CategoryKind } from '@buddy/shared';
+import { PieChart } from 'lucide-react';
+import EmptyState from '../components/EmptyState.js';
+import { SkeletonCard } from '../components/Skeleton.js';
 import { useHousehold } from '../api/household.js';
 import { useCreateCategory, useSetCategoryArchived } from '../api/categories.js';
 import {
@@ -52,7 +55,12 @@ export default function Budget() {
         </button>
       </div>
 
-      {budget.isLoading && <div className="text-center text-gray-500">Loading…</div>}
+      {budget.isLoading && (
+        <div className="flex flex-col gap-2">
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      )}
       {budget.isError && (
         <div className="text-center text-red-600">Failed to load budget.</div>
       )}
@@ -60,9 +68,11 @@ export default function Budget() {
       {budget.data && (
         <>
           {budget.data.groups.length === 0 && (
-            <div className="card text-center text-gray-500">
-              No categories yet. Add some in Settings.
-            </div>
+            <EmptyState
+              icon={PieChart}
+              title="No budget items yet"
+              message="Add your first item below to start planning this period."
+            />
           )}
 
           {budget.data.groups.map((group) => (

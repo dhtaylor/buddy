@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { NotebookText, Receipt } from 'lucide-react';
 import { formatCents, parseCents, type Category, type EntryDirection } from '@buddy/shared';
+import EmptyState from '../components/EmptyState.js';
+import { SkeletonCard } from '../components/Skeleton.js';
 import { useAccounts } from '../api/accounts.js';
 import { useCategories } from '../api/categories.js';
 import {
@@ -188,10 +191,12 @@ export default function Ledger() {
 
   if (!accounts || accounts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 p-8 text-center text-gray-500">
-        <h1 className="text-2xl font-semibold text-gray-700">Ledger</h1>
-        <p>You need an account first. Add one in Settings.</p>
-      </div>
+      <EmptyState
+        icon={NotebookText}
+        title="No accounts yet"
+        message="You need an account before you can record transactions."
+        cta={{ label: 'Add an account', to: '/settings' }}
+      />
     );
   }
 
@@ -360,9 +365,18 @@ export default function Ledger() {
       )}
 
       {isLoading ? (
-        <p className="p-4 text-center text-gray-500">Loading…</p>
+        <div className="flex flex-col gap-2">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
       ) : display.length === 0 ? (
-        <p className="p-4 text-center text-gray-500">No transactions yet.</p>
+        <EmptyState
+          icon={Receipt}
+          title="No transactions yet"
+          message="Add your first transaction to start your ledger."
+          cta={{ label: 'Add transaction', onClick: openAdd }}
+        />
       ) : (
         <ul className="flex flex-col gap-2">
           {display.map((e) => {

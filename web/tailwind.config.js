@@ -9,6 +9,15 @@ export default {
           dark: '#115e59',
         },
       },
+      keyframes: {
+        'fade-slide-in': {
+          '0%': { opacity: '0', transform: 'translateY(6px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        'fade-slide-in': 'fade-slide-in 0.18s ease-out both',
+      },
     },
   },
   plugins: [],

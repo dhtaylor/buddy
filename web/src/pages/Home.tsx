@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Wallet } from 'lucide-react';
 import { addDays, formatCents, periodFor, type HelocSummary } from '@buddy/shared';
+import EmptyState from '../components/EmptyState.js';
+import { Skeleton } from '../components/Skeleton.js';
 import { useAccounts, useHelocSummary } from '../api/accounts.js';
 import { useHousehold } from '../api/household.js';
 import { useLedgerBalance } from '../api/ledger.js';
@@ -39,18 +42,25 @@ export default function Home() {
   const showHeloc = helocEnabled && (heloc.data?.length ?? 0) > 0;
 
   if (accountsLoading) {
-    return <p className="p-8 text-center text-gray-500">Loading…</p>;
+    return (
+      <div className="flex flex-col gap-4 p-4">
+        <Skeleton className="h-8 w-24" />
+        <Skeleton className="h-24 w-full rounded-xl" />
+        <Skeleton className="h-20 w-full rounded-xl" />
+      </div>
+    );
   }
 
   if (!accounts || accounts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 p-8 text-center text-gray-500">
-        <h1 className="text-2xl font-semibold text-gray-700">Welcome to Buddy</h1>
-        <p>Add an account to get started.</p>
-        <Link to="/settings" className="btn-primary">
-          Go to Settings
-        </Link>
-        <Link to="/guide" className="text-sm text-brand underline">
+      <div className="flex flex-col items-center">
+        <EmptyState
+          icon={Wallet}
+          title="Welcome to Buddy"
+          message="Add an account to get started tracking your household's money."
+          cta={{ label: 'Go to Settings', to: '/settings' }}
+        />
+        <Link to="/guide" className="-mt-4 text-sm text-brand underline">
           New here? Read the getting-started guide
         </Link>
       </div>
@@ -65,12 +75,22 @@ export default function Home() {
       <h1 className="text-2xl font-bold">Home</h1>
 
       {/* Running balance */}
-      <div className="card flex flex-col gap-2">
-        <div className="text-sm font-medium text-gray-600">
+      <div
+        className={`flex flex-col gap-2 ${
+          showHeloc
+            ? 'card'
+            : 'rounded-xl bg-gradient-to-br from-brand to-brand-dark p-4 text-white shadow-sm'
+        }`}
+      >
+        <div className={`text-sm font-medium ${showHeloc ? 'text-gray-600' : 'text-white/80'}`}>
           {showHeloc ? 'Cash & net position' : 'Running balance'}
         </div>
         {balance.isLoading ? (
-          <div className="text-gray-400">Loading…</div>
+          showHeloc ? (
+            <Skeleton className="h-8 w-32" />
+          ) : (
+            <div className="h-9 w-36 animate-pulse rounded-md bg-white/25" aria-hidden="true" />
+          )
         ) : showHeloc ? (
           <div className="flex items-end justify-between">
             <div>
@@ -93,16 +113,16 @@ export default function Home() {
         ) : (
           <div className="flex items-end justify-between">
             <div>
-              <div className="text-3xl font-bold tabular-nums">
+              <div className="text-4xl font-bold tabular-nums">
                 {formatCents(balance.data?.recordedCents ?? 0)}
               </div>
-              <div className="text-xs text-gray-500">Recorded</div>
+              <div className="text-xs text-white/70">Recorded</div>
             </div>
             <div className="text-right">
-              <div className="text-xl font-semibold tabular-nums text-gray-700">
+              <div className="text-xl font-semibold tabular-nums text-white/90">
                 {formatCents(balance.data?.clearedCents ?? 0)}
               </div>
-              <div className="text-xs text-gray-500">Cleared</div>
+              <div className="text-xs text-white/70">Cleared</div>
             </div>
           </div>
         )}
@@ -135,7 +155,11 @@ export default function Home() {
           </button>
         </div>
         {summary.isLoading ? (
-          <p className="text-gray-400">Loading…</p>
+          <div className="grid grid-cols-3 gap-2">
+            <Skeleton className="h-16 w-full rounded-xl" />
+            <Skeleton className="h-16 w-full rounded-xl" />
+            <Skeleton className="h-16 w-full rounded-xl" />
+          </div>
         ) : summary.isError || !summary.data ? (
           <p className="text-sm text-gray-500">Budget summary unavailable.</p>
         ) : (

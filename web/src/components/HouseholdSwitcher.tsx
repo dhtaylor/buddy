@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { HelpCircle } from 'lucide-react';
 import { useHousehold, useMyHouseholds, useSwitchHousehold } from '../api/household.js';
 
 // Always-visible bar to see and switch the active household. Switching clears the
@@ -39,9 +40,10 @@ export default function HouseholdSwitcher() {
       <Link
         to="/guide"
         aria-label="Help & getting-started guide"
-        className="shrink-0 rounded-full border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-500 active:bg-gray-100"
+        className="flex shrink-0 items-center gap-1 rounded-full border border-gray-300 px-2 py-1 text-xs font-medium text-gray-500 transition-colors hover:text-brand active:bg-gray-100"
       >
-        ? Help
+        <HelpCircle size={14} aria-hidden="true" />
+        Help
       </Link>
     </div>
   );

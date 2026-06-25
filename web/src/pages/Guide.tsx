@@ -1,4 +1,13 @@
 import { Link } from 'react-router-dom';
+import {
+  Home,
+  NotebookText,
+  PieChart,
+  ReceiptText,
+  Download,
+  TrendingUp,
+  type LucideIcon,
+} from 'lucide-react';
 
 // In-app getting-started guide. Reachable from the household bar ("Help") and the
 // first-run welcome screen. Plain-language, mirrors the real setup flow so a new
@@ -54,26 +63,26 @@ export default function Guide() {
       </Card>
 
       <Card title="Using Buddy day to day">
-        <Tour icon="🏠" label="Home">
+        <Tour icon={Home} label="Home">
           Your running balance and a quick summary of income vs. spending for the current period.
           Step between periods with <Em>Prev</Em> / <Em>Next</Em>.
         </Tour>
-        <Tour icon="📒" label="Ledger">
+        <Tour icon={NotebookText} label="Ledger">
           The list of every transaction. Add income and expenses here, assign a category, and mark
           items cleared once they hit your bank.
         </Tour>
-        <Tour icon="📊" label="Budget">
+        <Tour icon={PieChart} label="Budget">
           Plan how much each category gets per period, then watch planned vs. actual fill in as you
           spend.
         </Tour>
-        <Tour icon="🧾" label="Bills">
+        <Tour icon={ReceiptText} label="Bills">
           Track recurring bills so nothing slips through the cracks.
         </Tour>
-        <Tour icon="📥" label="Import">
+        <Tour icon={Download} label="Import">
           Download a CSV or OFX file from your bank and upload it — Buddy matches each row against
           your ledger so you can reconcile in a couple of taps instead of typing everything by hand.
         </Tour>
-        <Tour icon="📈" label="History" last>
+        <Tour icon={TrendingUp} label="History" last>
           Trends across past periods — where the money actually went over time.
         </Tour>
       </Card>
@@ -142,19 +151,19 @@ function Step({
 }
 
 function Tour({
-  icon,
+  icon: Icon,
   label,
   children,
   last,
 }: {
-  icon: string;
+  icon: LucideIcon;
   label: string;
   children: React.ReactNode;
   last?: boolean;
 }) {
   return (
     <div className={`flex gap-3 ${last ? '' : 'border-b border-gray-100 pb-3'}`}>
-      <span className="text-lg leading-none">{icon}</span>
+      <Icon size={18} className="mt-0.5 shrink-0 text-brand" aria-hidden="true" />
       <p className="text-sm text-gray-600">
         <span className="font-semibold text-gray-800">{label} — </span>
         {children}
