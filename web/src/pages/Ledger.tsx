@@ -16,6 +16,11 @@ import {
   type LedgerEntryWithBalance,
 } from '../api/ledger.js';
 
+/** Money text color, matching Home: red for negative, green for positive. */
+function amountColor(cents: number): string {
+  return cents < 0 ? 'text-red-600' : cents > 0 ? 'text-green-700' : 'text-gray-500';
+}
+
 /** Local calendar "today" as ISO YYYY-MM-DD (avoids UTC off-by-one). */
 function todayISO(): string {
   const d = new Date();
@@ -220,7 +225,9 @@ export default function Ledger() {
 
       <div className="card flex items-center justify-between">
         <span className="text-sm font-medium text-gray-600">Current balance</span>
-        <span className="text-2xl font-bold tabular-nums">{formatCents(currentBalanceCents)}</span>
+        <span className={`text-2xl font-bold tabular-nums ${amountColor(currentBalanceCents)}`}>
+          {formatCents(currentBalanceCents)}
+        </span>
       </div>
 
       <label className="flex flex-col gap-1 text-sm font-medium">
@@ -418,16 +425,17 @@ export default function Ledger() {
                         </div>
                       </div>
                       <div
-                        className={`shrink-0 text-right font-semibold tabular-nums ${
-                          signed < 0 ? 'text-gray-800' : 'text-green-700'
-                        }`}
+                        className={`shrink-0 text-right font-semibold tabular-nums ${amountColor(signed)}`}
                       >
                         {formatCents(signed)}
                       </div>
                     </div>
                     {selectMode ? (
                       <div className="text-xs tabular-nums text-gray-500">
-                        Bal {formatCents(e.runningBalanceCents)}
+                        Bal{' '}
+                        <span className={amountColor(e.runningBalanceCents)}>
+                          {formatCents(e.runningBalanceCents)}
+                        </span>
                       </div>
                     ) : (
                       <>
@@ -451,7 +459,12 @@ export default function Ledger() {
                             </span>
                             {e.cleared ? 'Cleared' : 'Pending'}
                           </button>
-                          <span className="tabular-nums">Bal {formatCents(e.runningBalanceCents)}</span>
+                          <span className="tabular-nums">
+                            Bal{' '}
+                            <span className={amountColor(e.runningBalanceCents)}>
+                              {formatCents(e.runningBalanceCents)}
+                            </span>
+                          </span>
                         </div>
                         <div className="flex gap-2 pt-1">
                           <button className="btn-secondary py-1.5" onClick={() => openEdit(e)}>
