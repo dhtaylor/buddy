@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom';
-import { HelpCircle } from 'lucide-react';
 import { useHousehold, useMyHouseholds, useSwitchHousehold } from '../api/household.js';
 import ProfileMenu from './ProfileMenu.js';
 
@@ -41,10 +40,9 @@ export default function HouseholdSwitcher() {
       <Link
         to="/guide"
         aria-label="Help & getting-started guide"
-        className="flex shrink-0 items-center gap-1 rounded-full border border-gray-300 px-2 py-1 text-xs font-medium text-gray-500 transition-colors hover:text-brand active:bg-gray-100"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-brand bg-white text-sm font-bold text-brand transition-[transform,box-shadow] hover:shadow-md active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1"
       >
-        <HelpCircle size={14} aria-hidden="true" />
-        Help
+        ?
       </Link>
       <ProfileMenu />
     </div>
