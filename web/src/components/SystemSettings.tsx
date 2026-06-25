@@ -21,8 +21,8 @@ import {
 // households, users/admins, and backups across the whole install.
 export default function SystemSettings() {
   return (
-    <section className="flex flex-col gap-4 rounded-xl border-2 border-teal-200 bg-teal-50/40 p-3">
-      <h2 className="text-lg font-bold text-teal-800">System Settings (admin)</h2>
+    <section className="flex flex-col gap-4 rounded-xl border-2 border-violet-200 bg-violet-50/40 p-3">
+      <h2 className="text-lg font-bold text-violet-800">System Settings (admin)</h2>
       <Overview />
       <Households />
       <Users />
@@ -150,7 +150,7 @@ function UserRow({ u, households }: { u: SystemUser; households: SystemHousehold
           <div className="truncate font-medium">
             {u.displayName}
             {u.isAdmin && (
-              <span className="ml-2 rounded bg-teal-100 px-1.5 text-xs text-teal-700">system admin</span>
+              <span className="ml-2 rounded bg-violet-100 px-1.5 text-xs text-violet-700">system admin</span>
             )}
           </div>
           <div className="truncate text-xs text-gray-500">{u.email}</div>

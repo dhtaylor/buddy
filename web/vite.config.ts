@@ -11,7 +11,7 @@ export default defineConfig({
         name: 'Buddy — Family Finance',
         short_name: 'Buddy',
         description: 'Self-hosted family finance & budget',
-        theme_color: '#0f766e',
+        theme_color: '#7c5fce',
         background_color: '#ffffff',
         display: 'standalone',
         start_url: '/',
