@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { EntryDirection, LedgerEntry } from '@buddy/shared';
+import type { BalanceSummary, EntryDirection, LedgerEntry } from '@buddy/shared';
 import { api } from './client.js';
 
 /** A ledger entry plus its per-account cumulative running balance. */
@@ -13,10 +13,7 @@ export interface LedgerParams {
   to?: string;
 }
 
-export interface LedgerBalance {
-  recordedCents: number;
-  clearedCents: number;
-}
+export type LedgerBalance = BalanceSummary;
 
 export interface LedgerEntryInput {
   accountId: number;

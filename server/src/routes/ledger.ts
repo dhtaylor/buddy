@@ -6,6 +6,7 @@ import { db } from '../db/index.js';
 import { accounts, categories, ledgerEntries } from '../db/schema.js';
 import { authGuard, requireSession } from '../lib/auth.js';
 import { badRequest, notFound } from '../lib/errors.js';
+import { summarizeBalances } from '../lib/heloc.js';
 
 /** A ledger entry augmented with its per-account cumulative running balance. */
 export interface LedgerEntryWithBalance extends LedgerEntry {
@@ -129,7 +130,8 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ data: filtered });
   });
 
-  // GET /balance -> { recordedCents, clearedCents } across all household accounts.
+  // GET /balance -> asset/liability/net breakdown across all household accounts.
+  // recordedCents/clearedCents are preserved for back-compat (both equal net).
   app.get('/balance', async (req, reply) => {
     const { householdId } = requireSession(req);
 
@@ -137,22 +139,13 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
       .select()
       .from(accounts)
       .where(eq(accounts.householdId, householdId));
-    const openingSum = accountRows.reduce((s, a) => s + a.openingBalanceCents, 0);
 
     const rows = await db
       .select()
       .from(ledgerEntries)
       .where(eq(ledgerEntries.householdId, householdId));
 
-    let recordedCents = openingSum;
-    let clearedCents = openingSum;
-    for (const row of rows) {
-      const delta = signedAmountCents(toDto(row));
-      recordedCents += delta;
-      if (row.cleared) clearedCents += delta;
-    }
-
-    return reply.send({ data: { recordedCents, clearedCents } });
+    return reply.send({ data: summarizeBalances(accountRows, rows) });
   });
 
   // POST / -> create entry

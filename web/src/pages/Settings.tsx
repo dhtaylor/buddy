@@ -23,6 +23,19 @@ import { useAddSpouse, useCurrentUser } from '../api/auth.js';
 import { ApiClientError } from '../api/client.js';
 import SystemSettings from '../components/SystemSettings.js';
 
+/** "8.5" (percent) -> 850 (basis points); blank/invalid -> null. */
+function aprToBps(input: string): number | null {
+  const t = input.trim();
+  const n = Number(t);
+  if (!t || !Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+/** 850 (bps) -> "8.5" (percent) for input display; null -> "". */
+function bpsToApr(bps: number | null): string {
+  return bps == null ? '' : String(bps / 100);
+}
+
 export default function Settings() {
   const logout = useLogout();
   const { data: user } = useCurrentUser();
@@ -174,6 +187,7 @@ function HouseholdForm({
   const [periodLength, setPeriodLength] = useState(household.periodLength);
   const [anchor, setAnchor] = useState(household.periodAnchorDate);
   const [customDays, setCustomDays] = useState(household.periodCustomDays ?? 7);
+  const [helocEnabled, setHelocEnabled] = useState(household.helocStrategyEnabled);
 
   return (
     <form
@@ -185,6 +199,7 @@ function HouseholdForm({
           periodLength,
           periodAnchorDate: anchor,
           periodCustomDays: periodLength === 'custom' ? customDays : null,
+          helocStrategyEnabled: helocEnabled,
         });
       }}
     >
@@ -226,6 +241,20 @@ function HouseholdForm({
           />
         </label>
       )}
+      <label className="flex items-start gap-2 text-sm font-medium">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={helocEnabled}
+          onChange={(e) => setHelocEnabled(e.target.checked)}
+        />
+        <span>
+          Enable HELOC cash-sweep view
+          <span className="block text-xs font-normal text-gray-500">
+            Shows cash vs. debt and a HELOC paydown card on Home. Doesn’t change your data.
+          </span>
+        </span>
+      </label>
       <button className="btn-primary">Save household</button>
     </form>
   );
@@ -241,6 +270,10 @@ function AccountsSection() {
   const [name, setName] = useState('');
   const [type, setType] = useState<Account['type']>('checking');
   const [opening, setOpening] = useState('');
+  const [creditLimit, setCreditLimit] = useState('');
+  const [apr, setApr] = useState('');
+
+  const isHeloc = type === 'heloc';
 
   return (
     <Section title="Accounts & opening balances">
@@ -261,12 +294,20 @@ function AccountsSection() {
           e.preventDefault();
           const cents = parseCents(opening) ?? 0;
           create.mutate(
-            { name, type, openingBalanceCents: cents },
+            {
+              name,
+              type,
+              openingBalanceCents: cents,
+              creditLimitCents: isHeloc ? parseCents(creditLimit) ?? 0 : 0,
+              aprBps: isHeloc ? aprToBps(apr) : null,
+            },
             {
               onSuccess: () => {
                 setName('');
                 setOpening('');
                 setType('checking');
+                setCreditLimit('');
+                setApr('');
               },
             },
           );
@@ -288,13 +329,34 @@ function AccountsSection() {
           <option value="checking">Checking</option>
           <option value="savings">Savings</option>
           <option value="cash">Cash</option>
+          <option value="heloc">HELOC / Line of credit</option>
         </select>
         <input
           className="input"
-          placeholder="Opening balance (e.g. 1,000.00)"
+          placeholder={isHeloc ? 'Balance owed (e.g. -25,000.00)' : 'Opening balance (e.g. 1,000.00)'}
           value={opening}
           onChange={(e) => setOpening(e.target.value)}
         />
+        {isHeloc && (
+          <>
+            <p className="-mt-1 text-xs text-gray-500">
+              Enter the HELOC balance as a negative number (what you owe). Draws are debits;
+              payments/sweeps are credits.
+            </p>
+            <input
+              className="input"
+              placeholder="Credit limit (e.g. 50,000.00)"
+              value={creditLimit}
+              onChange={(e) => setCreditLimit(e.target.value)}
+            />
+            <input
+              className="input"
+              placeholder="APR % (e.g. 8.5)"
+              value={apr}
+              onChange={(e) => setApr(e.target.value)}
+            />
+          </>
+        )}
         <button className="btn-primary">Add account</button>
       </form>
     </Section>
@@ -307,13 +369,25 @@ function AccountRow({
   onDelete,
 }: {
   account: Account;
-  onSave: (patch: { name: string; type: Account['type']; openingBalanceCents: number }) => void;
+  onSave: (patch: {
+    name: string;
+    type: Account['type'];
+    openingBalanceCents: number;
+    creditLimitCents: number;
+    aprBps: number | null;
+  }) => void;
   onDelete: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(account.name);
   const [type, setType] = useState(account.type);
   const [opening, setOpening] = useState(formatCents(account.openingBalanceCents).replace('$', ''));
+  const [creditLimit, setCreditLimit] = useState(
+    formatCents(account.creditLimitCents).replace('$', ''),
+  );
+  const [apr, setApr] = useState(bpsToApr(account.aprBps));
+
+  const isHeloc = type === 'heloc';
 
   if (!editing) {
     return (
@@ -321,7 +395,9 @@ function AccountRow({
         <div>
           <div className="font-medium">{account.name}</div>
           <div className="text-xs text-gray-500">
-            {account.type} · opening {formatCents(account.openingBalanceCents)}
+            {account.type === 'heloc'
+              ? `heloc · owed ${formatCents(Math.max(0, -account.openingBalanceCents))} · limit ${formatCents(account.creditLimitCents)}`
+              : `${account.type} · opening ${formatCents(account.openingBalanceCents)}`}
           </div>
         </div>
         <div className="flex gap-2">
@@ -347,13 +423,41 @@ function AccountRow({
         <option value="checking">Checking</option>
         <option value="savings">Savings</option>
         <option value="cash">Cash</option>
+        <option value="heloc">HELOC / Line of credit</option>
       </select>
-      <input className="input" value={opening} onChange={(e) => setOpening(e.target.value)} />
+      <input
+        className="input"
+        placeholder={isHeloc ? 'Balance owed (negative)' : 'Opening balance'}
+        value={opening}
+        onChange={(e) => setOpening(e.target.value)}
+      />
+      {isHeloc && (
+        <>
+          <input
+            className="input"
+            placeholder="Credit limit"
+            value={creditLimit}
+            onChange={(e) => setCreditLimit(e.target.value)}
+          />
+          <input
+            className="input"
+            placeholder="APR %"
+            value={apr}
+            onChange={(e) => setApr(e.target.value)}
+          />
+        </>
+      )}
       <div className="flex gap-2">
         <button
           className="btn-primary py-1.5"
           onClick={() => {
-            onSave({ name, type, openingBalanceCents: parseCents(opening) ?? 0 });
+            onSave({
+              name,
+              type,
+              openingBalanceCents: parseCents(opening) ?? 0,
+              creditLimitCents: isHeloc ? parseCents(creditLimit) ?? 0 : 0,
+              aprBps: isHeloc ? aprToBps(apr) : null,
+            });
             setEditing(false);
           }}
         >

@@ -42,5 +42,23 @@ services:
       - ./backups:/backups
     restart: unless-stopped
 
+  # HTTPS reverse proxy so browsers (Chrome) get a trusted padlock on the LAN
+  # without disabling their global HTTPS setting. Terminates TLS on 443 and
+  # proxies to the app. The phone can still use http://<pc-ip>:8080 directly.
+  caddy:
+    image: caddy:2-alpine
+    container_name: buddy-caddy
+    depends_on:
+      - buddy
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
 volumes:
   buddy-pgdata:
+  caddy-data:
+  caddy-config:

@@ -16,6 +16,9 @@ backups/
 .env
 .env.local
 
+# Caddy local CA root cert (extracted per-deployment for client trust install)
+buddy-rootCA.crt
+
 # Editor / OS
 .DS_Store
 Thumbs.db

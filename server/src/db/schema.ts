@@ -18,6 +18,9 @@ export const households = pgTable('households', {
   periodLength: text('period_length').notNull().default('weekly'),
   periodAnchorDate: text('period_anchor_date').notNull(),
   periodCustomDays: integer('period_custom_days'),
+  // When true, Home shows the HELOC cash-sweep view (assets vs. liabilities,
+  // HELOC card). Purely presentational — never hides or changes data.
+  helocStrategyEnabled: boolean('heloc_strategy_enabled').notNull().default(false),
 });
 
 export const users = pgTable('users', {
@@ -56,9 +59,16 @@ export const accounts = pgTable(
       .notNull()
       .references(() => households.id),
     name: text('name').notNull(),
-    // 'checking' | 'savings' | 'cash'
+    // 'checking' | 'savings' | 'cash' | 'heloc'
+    // For 'heloc' (line of credit), openingBalanceCents is the signed balance:
+    // negative = amount owed. Drawing is a debit (more negative); a payment/
+    // sweep is a credit (toward zero).
     type: text('type').notNull().default('checking'),
     openingBalanceCents: integer('opening_balance_cents').notNull().default(0),
+    // HELOC-only. Credit limit (positive cents) and APR in basis points
+    // (e.g. 8.50% = 850). Null/0 for non-HELOC accounts.
+    creditLimitCents: integer('credit_limit_cents').notNull().default(0),
+    aprBps: integer('apr_bps'),
   },
   (t) => ({
     byHousehold: index('accounts_household_idx').on(t.householdId),

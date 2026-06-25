@@ -84,6 +84,54 @@ describe('archive (hide) a category', () => {
   });
 });
 
+describe('HELOC cash-sweep view', () => {
+  it('splits assets/liabilities and summarizes draws vs. sweeps', async () => {
+    const heloc = (
+      await a.post('/api/accounts', {
+        name: 'HELOC',
+        type: 'heloc',
+        openingBalanceCents: -2_000_000, // $20,000 owed
+        creditLimitCents: 5_000_000,
+        aprBps: 840,
+      })
+    ).data;
+    expect(heloc.creditLimitCents).toBe(5_000_000);
+    expect(heloc.aprBps).toBe(840);
+
+    // Draw $500 to pay a bill; sweep $3,000 of income onto the HELOC.
+    await a.post('/api/ledger', { accountId: heloc.id, entryDate: today, payee: 'Bill draw', amountCents: 50_000, direction: 'debit' });
+    await a.post('/api/ledger', { accountId: heloc.id, entryDate: today, payee: 'Income sweep', amountCents: 300_000, direction: 'credit' });
+
+    // owed = 2,000,000 + 50,000 - 300,000 = 1,750,000
+    const summary = (await a.get(`/api/accounts/heloc-summary?from=${today}&to=${today}`)).data;
+    expect(summary.length).toBe(1);
+    const h = summary[0];
+    expect(h.owedCents).toBe(1_750_000);
+    expect(h.availableCents).toBe(3_250_000);
+    expect(h.sweptCents).toBe(300_000);
+    expect(h.drawnCents).toBe(50_000);
+    expect(h.estMonthlyInterestCents).toBe(Math.round((1_750_000 * 840) / 10_000 / 12));
+    // Velocity payoff: a same-day sweep means baseline owed >= actual owed, so saving >= 0.
+    expect(typeof h.periodInterestCents).toBe('number');
+    expect(h.interestSavedCents).toBeGreaterThanOrEqual(0);
+
+    const bal = (await a.get('/api/ledger/balance')).data;
+    expect(bal.liabilitiesCents).toBe(1_750_000); // only the HELOC is a liability
+    expect(bal.netCents).toBe(bal.assetsCents - bal.liabilitiesCents);
+    expect(bal.recordedCents).toBe(bal.netCents); // back-compat invariant
+  });
+
+  it('scopes swept/drawn to the date range, not the balance', async () => {
+    const heloc = (await a.get('/api/accounts')).data.find((x: any) => x.type === 'heloc');
+    // A sweep dated outside the queried range must not count toward sweptCents.
+    await a.post('/api/ledger', { accountId: heloc.id, entryDate: '2020-01-01', payee: 'Old sweep', amountCents: 111, direction: 'credit' });
+    const summary = (await a.get(`/api/accounts/heloc-summary?from=${today}&to=${today}`)).data;
+    const h = summary[0];
+    expect(h.sweptCents).toBe(300_000); // unchanged — old sweep excluded from range
+    expect(h.balanceCents).toBe(-1_750_000 + 111); // but balance reflects every entry
+  });
+});
+
 describe('bills: split + mark paid → ledger', () => {
   it('splitting creates occurrences and paying writes a ledger entry', async () => {
     const bill = (await a.post('/api/bills', { name: 'Internet', categoryId: groceriesId, recurrence: 'monthly' })).data;

@@ -18,6 +18,7 @@ const updateBody = z
     periodLength: z.enum(['weekly', 'biweekly', 'monthly', 'custom']).optional(),
     periodAnchorDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     periodCustomDays: z.number().int().positive().nullable().optional(),
+    helocStrategyEnabled: z.boolean().optional(),
   })
   .refine((b) => Object.keys(b).length > 0, { message: 'No fields to update' });
 
@@ -28,6 +29,7 @@ function toDto(row: typeof households.$inferSelect): Household {
     periodLength: row.periodLength as Household['periodLength'],
     periodAnchorDate: row.periodAnchorDate,
     periodCustomDays: row.periodCustomDays,
+    helocStrategyEnabled: row.helocStrategyEnabled,
   };
 }
 
@@ -46,6 +48,7 @@ const householdRoutes: FastifyPluginAsync = async (app) => {
         periodLength: households.periodLength,
         periodAnchorDate: households.periodAnchorDate,
         periodCustomDays: households.periodCustomDays,
+        helocStrategyEnabled: households.helocStrategyEnabled,
         role: householdMembers.role,
       })
       .from(householdMembers)

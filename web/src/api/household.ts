@@ -14,6 +14,7 @@ export type HouseholdUpdate = Partial<{
   periodLength: Household['periodLength'];
   periodAnchorDate: string;
   periodCustomDays: number | null;
+  helocStrategyEnabled: boolean;
 }>;
 
 export function useUpdateHousehold() {

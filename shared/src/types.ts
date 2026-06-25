@@ -9,7 +9,7 @@ import type { PeriodLength } from './period.js';
 export type Id = number;
 
 // --- Enums ---
-export type AccountType = 'checking' | 'savings' | 'cash';
+export type AccountType = 'checking' | 'savings' | 'cash' | 'heloc';
 export type CategoryKind = 'income' | 'expense';
 export type EntryDirection = 'debit' | 'credit';
 export type EntrySource = 'manual' | 'imported';
@@ -35,6 +35,8 @@ export interface Household {
   periodAnchorDate: string;
   /** Only meaningful when periodLength === 'custom'. */
   periodCustomDays: number | null;
+  /** When true, Home shows the HELOC cash-sweep view. Presentational only. */
+  helocStrategyEnabled: boolean;
 }
 
 export interface HouseholdMember {
@@ -49,7 +51,12 @@ export interface Account {
   householdId: Id;
   name: string;
   type: AccountType;
+  /** For HELOC accounts, the signed balance: negative = amount owed. */
   openingBalanceCents: number;
+  /** HELOC-only credit limit (positive cents); 0 otherwise. */
+  creditLimitCents: number;
+  /** HELOC-only APR in basis points (8.50% = 850); null otherwise. */
+  aprBps: number | null;
 }
 
 export interface Category {
@@ -132,6 +139,51 @@ export interface ImportedTransaction {
   fingerprint: string;
   status: ImportedTxnStatus;
   matchedEntryId: Id | null;
+}
+
+// --- Derived / summary shapes ---
+/** GET /ledger/balance. recorded/cleared kept for back-compat (= net). */
+export interface BalanceSummary {
+  recordedCents: number;
+  clearedCents: number;
+  /** Sum of non-HELOC account balances (recorded). */
+  assetsCents: number;
+  /** Total HELOC amount owed (positive), recorded. */
+  liabilitiesCents: number;
+  /** assetsCents - liabilitiesCents (equals recordedCents). */
+  netCents: number;
+}
+
+/** One entry of GET /accounts/heloc-summary, per HELOC account. */
+export interface HelocSummary {
+  accountId: Id;
+  name: string;
+  /** Signed balance: negative = owed. */
+  balanceCents: number;
+  /** Amount owed (positive). */
+  owedCents: number;
+  creditLimitCents: number;
+  /** creditLimitCents - owedCents, floored at 0. */
+  availableCents: number;
+  aprBps: number | null;
+  /** Estimated interest for one month at the current balance. Null if no APR. */
+  estMonthlyInterestCents: number | null;
+  /** Payments/sweeps (credits) within the requested range. */
+  sweptCents: number;
+  /** Draws (debits) within the requested range. */
+  drawnCents: number;
+  /**
+   * Interest actually accrued over [from, to], computed day-by-day on the real
+   * daily balance (daily rate = APR / 365). Null if no APR or no date range.
+   */
+  periodInterestCents: number | null;
+  /**
+   * The velocity-banking payoff: interest saved over [from, to] by sweeping
+   * income onto the line. Compares the real daily balance against a
+   * counterfactual where this period's sweeps (credits) never happened.
+   * Null if no APR or no date range.
+   */
+  interestSavedCents: number | null;
 }
 
 // --- API envelope ---

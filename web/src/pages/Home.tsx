@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { addDays, formatCents, periodFor } from '@buddy/shared';
-import { useAccounts } from '../api/accounts.js';
+import { addDays, formatCents, periodFor, type HelocSummary } from '@buddy/shared';
+import { useAccounts, useHelocSummary } from '../api/accounts.js';
 import { useHousehold } from '../api/household.js';
 import { useLedgerBalance } from '../api/ledger.js';
 import { useBudgetSummary } from '../api/budget.js';
@@ -29,6 +29,15 @@ export default function Home() {
   const isCurrentWeek =
     !!summary.data && todayStr >= summary.data.period.startDate && todayStr <= summary.data.period.endDate;
 
+  // HELOC cash-sweep view (admin-toggled). Scope swept/drawn to the current period.
+  const hh = household.data;
+  const helocEnabled = !!hh?.helocStrategyEnabled;
+  const currentPeriod = hh
+    ? periodFor(todayStr, hh.periodLength, hh.periodAnchorDate, hh.periodCustomDays ?? undefined)
+    : undefined;
+  const heloc = useHelocSummary(currentPeriod?.startDate, currentPeriod?.endDate, helocEnabled);
+  const showHeloc = helocEnabled && (heloc.data?.length ?? 0) > 0;
+
   if (accountsLoading) {
     return <p className="p-8 text-center text-gray-500">Loading…</p>;
   }
@@ -54,9 +63,30 @@ export default function Home() {
 
       {/* Running balance */}
       <div className="card flex flex-col gap-2">
-        <div className="text-sm font-medium text-gray-600">Running balance</div>
+        <div className="text-sm font-medium text-gray-600">
+          {showHeloc ? 'Cash & net position' : 'Running balance'}
+        </div>
         {balance.isLoading ? (
           <div className="text-gray-400">Loading…</div>
+        ) : showHeloc ? (
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="text-3xl font-bold tabular-nums">
+                {formatCents(balance.data?.assetsCents ?? 0)}
+              </div>
+              <div className="text-xs text-gray-500">Cash on hand</div>
+            </div>
+            <div className="text-right">
+              <div
+                className={`text-xl font-semibold tabular-nums ${
+                  (balance.data?.netCents ?? 0) < 0 ? 'text-red-600' : 'text-gray-700'
+                }`}
+              >
+                {formatCents(balance.data?.netCents ?? 0)}
+              </div>
+              <div className="text-xs text-gray-500">Net (after HELOC)</div>
+            </div>
+          </div>
         ) : (
           <div className="flex items-end justify-between">
             <div>
@@ -74,6 +104,9 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* HELOC cash-sweep cards */}
+      {showHeloc && heloc.data?.map((h) => <HelocCard key={h.accountId} h={h} />)}
 
       {/* Weekly summary with period navigation */}
       <div>
@@ -131,6 +164,87 @@ export default function Home() {
       <Link to="/ledger" className="btn-primary text-center">
         Add transaction
       </Link>
+    </div>
+  );
+}
+
+function HelocCard({ h }: { h: HelocSummary }) {
+  // Share of the limit that is paid down (i.e. still available to borrow).
+  const paidDownPct =
+    h.creditLimitCents > 0 ? Math.round((h.availableCents / h.creditLimitCents) * 100) : 0;
+
+  return (
+    <div className="card flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold text-gray-700">{h.name}</div>
+        <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-700">HELOC</span>
+      </div>
+
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="text-3xl font-bold tabular-nums text-red-600">
+            {formatCents(h.owedCents)}
+          </div>
+          <div className="text-xs text-gray-500">Balance owed</div>
+        </div>
+        <div className="text-right">
+          <div className="text-xl font-semibold tabular-nums text-green-700">
+            {formatCents(h.availableCents)}
+          </div>
+          <div className="text-xs text-gray-500">Available credit</div>
+        </div>
+      </div>
+
+      {h.creditLimitCents > 0 && (
+        <div>
+          <div className="h-2 w-full overflow-hidden rounded bg-gray-200">
+            <div className="h-full rounded bg-green-500" style={{ width: `${paidDownPct}%` }} />
+          </div>
+          <div className="mt-1 text-xs text-gray-500">
+            {paidDownPct}% of {formatCents(h.creditLimitCents)} limit available
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded bg-green-50 px-3 py-2">
+          <div className="text-xs text-gray-500">Swept this period</div>
+          <div className="text-lg font-semibold tabular-nums text-green-700">
+            +{formatCents(h.sweptCents)}
+          </div>
+        </div>
+        <div className="rounded bg-red-50 px-3 py-2">
+          <div className="text-xs text-gray-500">Drawn this period</div>
+          <div className="text-lg font-semibold tabular-nums text-red-600">
+            -{formatCents(h.drawnCents)}
+          </div>
+        </div>
+      </div>
+
+      {h.interestSavedCents !== null && (
+        <div className="rounded-lg bg-emerald-50 px-3 py-2 ring-1 ring-emerald-200">
+          <div className="text-xs text-emerald-700">Interest saved this period by sweeping</div>
+          <div className="text-2xl font-bold tabular-nums text-emerald-700">
+            {formatCents(h.interestSavedCents)}
+          </div>
+          {h.periodInterestCents !== null && (
+            <div className="mt-0.5 text-xs text-emerald-700/80">
+              Accrued {formatCents(h.periodInterestCents)} vs.{' '}
+              {formatCents(h.periodInterestCents + h.interestSavedCents)} without the sweep
+            </div>
+          )}
+        </div>
+      )}
+
+      {h.estMonthlyInterestCents !== null && (
+        <div className="text-xs text-gray-500">
+          Est. interest this month at current balance:{' '}
+          <span className="font-semibold text-gray-700">
+            {formatCents(h.estMonthlyInterestCents)}
+          </span>
+          {h.aprBps !== null && <> ({(h.aprBps / 100).toFixed(2)}% APR)</>}
+        </div>
+      )}
     </div>
   );
 }
