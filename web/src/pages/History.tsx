@@ -16,6 +16,9 @@ import {
   type HistoryRange,
 } from '../api/history.js';
 
+/** Brand lavender, matching the Tailwind `brand` token used across the site. */
+const BRAND = '#7c5fce';
+
 /** Default range: the last 8 weeks (56 days), ending today. */
 function defaultRange(): { from: string; to: string } {
   const to = toISODate(new Date());
@@ -119,7 +122,7 @@ function SpendChart({ data }: { data: HistoryByCategory }) {
           <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
           <YAxis tick={{ fontSize: 10 }} width={48} tickFormatter={(v) => `$${v}`} />
           <Tooltip formatter={(v: number) => formatCents(Math.round(v * 100))} />
-          <Bar dataKey="total" fill="#2563eb" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="total" fill={BRAND} radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </section>
@@ -214,7 +217,7 @@ function GroupRows({
         <tr
           key={c.categoryId}
           onClick={() => onSelectCategory(c.categoryId)}
-          className="cursor-pointer border-t border-gray-100 hover:bg-blue-50"
+          className="cursor-pointer border-t border-gray-100 hover:bg-brand/5"
         >
           <td className="sticky left-0 z-10 bg-white px-2 py-1 pl-4">{c.categoryName}</td>
           {c.perPeriodCents.map((cents, i) => (
@@ -265,7 +268,7 @@ function CategoryTrend({
             <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
             <YAxis tick={{ fontSize: 10 }} width={48} tickFormatter={(v) => `$${v}`} />
             <Tooltip formatter={(v: number) => formatCents(Math.round(v * 100))} />
-            <Bar dataKey="amount" fill="#16a34a" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="amount" fill={BRAND} radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       )}
