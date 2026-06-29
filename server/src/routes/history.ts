@@ -159,7 +159,12 @@ const historyRoutes: FastifyPluginAsync = async (app) => {
         })
         .from(ledgerEntries)
         .where(
-          and(eq(ledgerEntries.householdId, householdId), eq(ledgerEntries.direction, 'debit')),
+          and(
+            eq(ledgerEntries.householdId, householdId),
+            eq(ledgerEntries.direction, 'debit'),
+            // Transfers move money between accounts; they are not spending.
+            isNull(ledgerEntries.transferId),
+          ),
         )
     ).filter((e) => e.entryDate >= rangeStart && e.entryDate <= rangeEnd);
 
@@ -282,6 +287,7 @@ const historyRoutes: FastifyPluginAsync = async (app) => {
           and(
             eq(ledgerEntries.householdId, householdId),
             eq(ledgerEntries.direction, 'debit'),
+            isNull(ledgerEntries.transferId),
             categoryFilter,
           ),
         )

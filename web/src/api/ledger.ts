@@ -27,6 +27,15 @@ export interface LedgerEntryInput {
   note?: string | null;
 }
 
+export interface TransferInput {
+  fromAccountId: number;
+  toAccountId: number;
+  amountCents: number;
+  entryDate: string;
+  cleared?: boolean;
+  note?: string | null;
+}
+
 function toQueryString(params: LedgerParams): string {
   const sp = new URLSearchParams();
   if (params.accountId !== undefined) sp.set('accountId', String(params.accountId));
@@ -36,12 +45,22 @@ function toQueryString(params: LedgerParams): string {
   return qs ? `?${qs}` : '';
 }
 
-/** Invalidate every query whose data depends on the ledger. */
+/**
+ * Invalidate every query whose data depends on the ledger.
+ *
+ * refetchType 'all' refetches matching queries immediately even when they have
+ * no active observer (e.g. the Home balance/HELOC cards while you're on the
+ * Ledger page). Without it, an `enabled`-gated query like the HELOC summary may
+ * skip its mount refetch and show stale numbers until a hard reload.
+ */
 function invalidateLedger(qc: ReturnType<typeof useQueryClient>) {
-  qc.invalidateQueries({ queryKey: ['ledger'] });
-  qc.invalidateQueries({ queryKey: ['ledger', 'balance'] });
-  qc.invalidateQueries({ queryKey: ['budget'] });
-  qc.invalidateQueries({ queryKey: ['history'] });
+  const opts = { refetchType: 'all' as const };
+  // ['ledger'] also covers ['ledger', 'balance'].
+  qc.invalidateQueries({ queryKey: ['ledger'], ...opts });
+  qc.invalidateQueries({ queryKey: ['budget'], ...opts });
+  qc.invalidateQueries({ queryKey: ['history'], ...opts });
+  // The Home HELOC card (owed/swept/drawn) is derived from ledger entries too.
+  qc.invalidateQueries({ queryKey: ['accounts', 'heloc-summary'], ...opts });
 }
 
 export function useLedger(params: LedgerParams = {}) {
@@ -62,6 +81,15 @@ export function useCreateLedgerEntry() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: LedgerEntryInput) => api.post<LedgerEntry>('/ledger', input),
+    onSuccess: () => invalidateLedger(qc),
+  });
+}
+
+/** Create an account-to-account transfer (two linked ledger legs). */
+export function useCreateTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: TransferInput) => api.post<LedgerEntry[]>('/ledger/transfer', input),
     onSuccess: () => invalidateLedger(qc),
   });
 }

@@ -83,6 +83,8 @@ export interface LedgerEntry {
   clearedDate: string | null;
   source: EntrySource;
   note: string | null;
+  /** Links the two legs of a transfer; null for ordinary entries. */
+  transferId: string | null;
 }
 
 export interface BudgetPeriod {

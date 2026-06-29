@@ -146,11 +146,12 @@ async function buildBudget(householdId: number, period: typeof budgetPeriods.$in
     .where(eq(budgetLines.periodId, period.id));
   const lineByCategory = new Map(lines.map((l) => [l.categoryId, l]));
 
-  const ledgerRows = await db
+  const allLedgerRows = await db
     .select({
       categoryId: ledgerEntries.categoryId,
       amountCents: ledgerEntries.amountCents,
       direction: ledgerEntries.direction,
+      transferId: ledgerEntries.transferId,
     })
     .from(ledgerEntries)
     .where(
@@ -160,6 +161,9 @@ async function buildBudget(householdId: number, period: typeof budgetPeriods.$in
         lte(ledgerEntries.entryDate, period.endDate),
       ),
     );
+  // Transfers move money between accounts; exclude both legs from income/expense
+  // actuals (they still affect balances, just not the budget).
+  const ledgerRows = allLedgerRows.filter((r) => r.transferId == null);
 
   const kindByCategory = new Map(
     cats.map((c) => [c.id, c.kind as 'income' | 'expense']),

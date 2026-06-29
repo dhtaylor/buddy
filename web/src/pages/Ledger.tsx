@@ -8,12 +8,14 @@ import { useCategories } from '../api/categories.js';
 import {
   useBulkCategorize,
   useCreateLedgerEntry,
+  useCreateTransfer,
   useDeleteLedgerEntry,
   useLedger,
   useToggleCleared,
   useUpdateLedgerEntry,
   type LedgerEntryInput,
   type LedgerEntryWithBalance,
+  type TransferInput,
 } from '../api/ledger.js';
 
 /** Money text color, matching Home: red for negative, green for positive. */
@@ -30,25 +32,34 @@ function todayISO(): string {
   return `${y}-${m}-${day}`;
 }
 
+// A ledger entry is a debit or credit; a transfer is just another kind, so the
+// form's single `kind` picker covers all three.
+type EntryKind = EntryDirection | 'transfer';
+
 type FormState = {
+  kind: EntryKind;
   accountId: number | '';
+  // Transfer-only: source and destination accounts.
+  fromAccountId: number | '';
+  toAccountId: number | '';
   entryDate: string;
   payee: string;
   categoryId: number | '';
   amount: string;
-  direction: EntryDirection;
   cleared: boolean;
   note: string;
 };
 
 function emptyForm(accountId: number | ''): FormState {
   return {
+    kind: 'debit',
     accountId,
+    fromAccountId: '',
+    toAccountId: '',
     entryDate: todayISO(),
     payee: '',
     categoryId: '',
     amount: '',
-    direction: 'debit',
     cleared: false,
     note: '',
   };
@@ -74,6 +85,7 @@ export default function Ledger() {
   }, [showForm, editingId]);
 
   const create = useCreateLedgerEntry();
+  const createTransfer = useCreateTransfer();
   const update = useUpdateLedgerEntry();
   const del = useDeleteLedgerEntry();
   const toggle = useToggleCleared();
@@ -154,12 +166,14 @@ export default function Ledger() {
   function openEdit(e: LedgerEntryWithBalance) {
     setEditingId(e.id);
     setForm({
+      kind: e.direction,
       accountId: e.accountId,
+      fromAccountId: '',
+      toAccountId: '',
       entryDate: e.entryDate,
       payee: e.payee,
       categoryId: e.categoryId ?? '',
       amount: formatCents(e.amountCents).replace('$', ''),
-      direction: e.direction,
       cleared: e.cleared,
       note: e.note ?? '',
     });
@@ -173,16 +187,35 @@ export default function Ledger() {
 
   function submit(ev: React.FormEvent) {
     ev.preventDefault();
-    if (form.accountId === '') return;
     const cents = parseCents(form.amount);
     if (cents === null || cents < 0) return;
+
+    const kind = form.kind;
+
+    // Transfer is add-only: move money between two distinct accounts.
+    if (kind === 'transfer') {
+      if (form.fromAccountId === '' || form.toAccountId === '') return;
+      if (form.fromAccountId === form.toAccountId || cents <= 0) return;
+      const input: TransferInput = {
+        fromAccountId: form.fromAccountId,
+        toAccountId: form.toAccountId,
+        amountCents: cents,
+        entryDate: form.entryDate,
+        cleared: form.cleared,
+        note: form.note.trim() === '' ? null : form.note,
+      };
+      createTransfer.mutate(input, { onSuccess: closeForm });
+      return;
+    }
+
+    if (form.accountId === '') return;
     const input: LedgerEntryInput = {
       accountId: form.accountId,
       entryDate: form.entryDate,
       payee: form.payee,
       categoryId: form.categoryId === '' ? null : form.categoryId,
       amountCents: cents,
-      direction: form.direction,
+      direction: kind,
       cleared: form.cleared,
       clearedDate: form.cleared ? form.entryDate : null,
       note: form.note.trim() === '' ? null : form.note,
@@ -249,53 +282,126 @@ export default function Ledger() {
       {showForm && (
         <form ref={formRef} className="card flex flex-col gap-3" onSubmit={submit}>
           <div className="text-sm font-semibold text-gray-700">
-            {editingId === null ? 'Add transaction' : 'Edit transaction'}
+            {editingId !== null
+              ? 'Edit transaction'
+              : form.kind === 'transfer'
+                ? 'Add transfer'
+                : 'Add transaction'}
           </div>
 
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Account
-            <select
-              className="select"
-              value={form.accountId}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, accountId: e.target.value === '' ? '' : Number(e.target.value) }))
-              }
-              required
-            >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
+          {/* One picker — a transfer is just another kind of transaction.
+              Transfer is add-only (you can't convert an existing entry). */}
           <div className="flex gap-2">
             <button
               type="button"
-              className={form.direction === 'debit' ? 'btn-primary flex-1' : 'btn-secondary flex-1'}
-              onClick={() => setForm((f) => ({ ...f, direction: 'debit' }))}
-            >
-              Debit (out)
-            </button>
-            <button
-              type="button"
-              className={form.direction === 'credit' ? 'btn-primary flex-1' : 'btn-secondary flex-1'}
-              onClick={() => setForm((f) => ({ ...f, direction: 'credit' }))}
+              className={form.kind === 'credit' ? 'btn-primary flex-1' : 'btn-secondary flex-1'}
+              onClick={() => setForm((f) => ({ ...f, kind: 'credit' }))}
             >
               Credit (in)
             </button>
+            <button
+              type="button"
+              className={form.kind === 'debit' ? 'btn-primary flex-1' : 'btn-secondary flex-1'}
+              onClick={() => setForm((f) => ({ ...f, kind: 'debit' }))}
+            >
+              Debit (out)
+            </button>
+            {editingId === null && (
+              <button
+                type="button"
+                className={form.kind === 'transfer' ? 'btn-primary flex-1' : 'btn-secondary flex-1'}
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    kind: 'transfer',
+                    // Seed From/To with sensible defaults the first time.
+                    fromAccountId: f.fromAccountId === '' ? accounts[0]?.id ?? '' : f.fromAccountId,
+                    toAccountId: f.toAccountId === '' ? accounts[1]?.id ?? '' : f.toAccountId,
+                  }))
+                }
+              >
+                Transfer
+              </button>
+            )}
           </div>
 
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Payee
-            <input
-              className="input"
-              value={form.payee}
-              onChange={(e) => setForm((f) => ({ ...f, payee: e.target.value }))}
-              required
-            />
-          </label>
+          {form.kind === 'transfer' ? (
+            <>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                From account
+                <select
+                  className="select"
+                  value={form.fromAccountId}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      fromAccountId: e.target.value === '' ? '' : Number(e.target.value),
+                    }))
+                  }
+                  required
+                >
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                To account
+                <select
+                  className="select"
+                  value={form.toAccountId}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      toAccountId: e.target.value === '' ? '' : Number(e.target.value),
+                    }))
+                  }
+                  required
+                >
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {form.fromAccountId !== '' && form.fromAccountId === form.toAccountId && (
+                <p className="text-xs text-red-600">Choose two different accounts.</p>
+              )}
+            </>
+          ) : (
+            <>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Account
+                <select
+                  className="select"
+                  value={form.accountId}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, accountId: e.target.value === '' ? '' : Number(e.target.value) }))
+                  }
+                  required
+                >
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Payee
+                <input
+                  className="input"
+                  value={form.payee}
+                  onChange={(e) => setForm((f) => ({ ...f, payee: e.target.value }))}
+                  required
+                />
+              </label>
+            </>
+          )}
 
           <label className="flex flex-col gap-1 text-sm font-medium">
             Date
@@ -320,26 +426,28 @@ export default function Ledger() {
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Category
-            <select
-              className="select"
-              value={form.categoryId}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, categoryId: e.target.value === '' ? '' : Number(e.target.value) }))
-              }
-            >
-              <option value="">— none —</option>
-              {(categories ?? [])
-                .filter((c) => !c.archived || c.id === form.categoryId)
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.groupName} · {c.name}
-                    {c.archived ? ' (hidden)' : ''}
-                  </option>
-                ))}
-            </select>
-          </label>
+          {form.kind !== 'transfer' && (
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              Category
+              <select
+                className="select"
+                value={form.categoryId}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, categoryId: e.target.value === '' ? '' : Number(e.target.value) }))
+                }
+              >
+                <option value="">— none —</option>
+                {(categories ?? [])
+                  .filter((c) => !c.archived || c.id === form.categoryId)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.groupName} · {c.name}
+                      {c.archived ? ' (hidden)' : ''}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
 
           <label className="flex flex-col gap-1 text-sm font-medium">
             Note
@@ -417,6 +525,11 @@ export default function Ledger() {
                               imported
                             </span>
                           )}
+                          {e.transferId && (
+                            <span className="shrink-0 rounded bg-purple-100 px-1.5 text-xs text-purple-700">
+                              transfer
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-gray-500">
                           {e.entryDate}
@@ -467,10 +580,25 @@ export default function Ledger() {
                           </span>
                         </div>
                         <div className="flex gap-2 pt-1">
-                          <button className="btn-secondary py-1.5" onClick={() => openEdit(e)}>
-                            Edit
-                          </button>
-                          <button className="btn-danger py-1.5" onClick={() => del.mutate(e.id)}>
+                          {/* Transfers are edited by deleting and re-creating, so
+                              the per-leg edit form is hidden for transfer rows. */}
+                          {!e.transferId && (
+                            <button className="btn-secondary py-1.5" onClick={() => openEdit(e)}>
+                              Edit
+                            </button>
+                          )}
+                          <button
+                            className="btn-danger py-1.5"
+                            onClick={() => {
+                              if (
+                                e.transferId &&
+                                !window.confirm('Delete this transfer? Both legs will be removed.')
+                              ) {
+                                return;
+                              }
+                              del.mutate(e.id);
+                            }}
+                          >
                             Delete
                           </button>
                         </div>

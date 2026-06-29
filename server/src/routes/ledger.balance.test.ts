@@ -14,6 +14,7 @@ function entry(over: Partial<LedgerEntry> & { id: number; accountId: number }): 
     clearedDate: null,
     source: 'manual',
     note: null,
+    transferId: null,
     ...over,
   };
 }

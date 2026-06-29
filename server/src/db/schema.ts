@@ -117,12 +117,17 @@ export const ledgerEntries = pgTable(
     // 'manual' | 'imported'
     source: text('source').notNull().default('manual'),
     note: text('note'),
+    // Links the two legs of an account-to-account transfer (same id on both).
+    // Null for ordinary entries. Transfer legs move balances like any other
+    // entry but are excluded from income/expense reporting (History/Budget).
+    transferId: text('transfer_id'),
   },
   (t) => ({
     byHousehold: index('ledger_entries_household_idx').on(t.householdId),
     byAccount: index('ledger_entries_account_idx').on(t.accountId),
     byDate: index('ledger_entries_date_idx').on(t.entryDate),
     byCategory: index('ledger_entries_category_idx').on(t.categoryId),
+    byTransfer: index('ledger_entries_transfer_idx').on(t.transferId),
   }),
 );
 

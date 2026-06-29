@@ -28,6 +28,7 @@ function entry(
     clearedDate: null,
     source: 'manual',
     note: null,
+    transferId: null,
     ...over,
   };
 }

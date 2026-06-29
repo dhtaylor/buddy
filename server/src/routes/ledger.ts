@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
@@ -37,6 +38,15 @@ const bulkCategorizeBody = z.object({
   categoryId: z.number().int().nullable(),
 });
 
+const transferBody = z.object({
+  fromAccountId: z.number().int(),
+  toAccountId: z.number().int(),
+  amountCents: z.number().int().positive(),
+  entryDate: z.string().regex(ISO_DATE, 'entryDate must be YYYY-MM-DD'),
+  cleared: z.boolean().optional(),
+  note: z.string().nullable().optional(),
+});
+
 function toDto(row: typeof ledgerEntries.$inferSelect): LedgerEntry {
   return {
     id: row.id,
@@ -51,12 +61,61 @@ function toDto(row: typeof ledgerEntries.$inferSelect): LedgerEntry {
     clearedDate: row.clearedDate,
     source: row.source as LedgerEntry['source'],
     note: row.note,
+    transferId: row.transferId,
   };
 }
 
 /** Signed delta a ledger entry applies to a balance: credit adds, debit subtracts. */
 export function signedAmountCents(entry: Pick<LedgerEntry, 'amountCents' | 'direction'>): number {
   return entry.direction === 'credit' ? entry.amountCents : -entry.amountCents;
+}
+
+export interface TransferLegParams {
+  householdId: number;
+  fromAccountId: number;
+  fromAccountName: string;
+  toAccountId: number;
+  toAccountName: string;
+  amountCents: number;
+  entryDate: string;
+  cleared: boolean;
+  note: string | null;
+  transferId: string;
+}
+
+/**
+ * Pure: build the two ledger legs of an account-to-account transfer — a debit on
+ * the source and a credit on the destination, sharing one transferId. Both legs
+ * are categoryless. This single "debit source / credit destination" rule is
+ * correct for every direction (a HELOC->checking transfer debits the HELOC as a
+ * draw; checking->HELOC credits the HELOC as a paydown).
+ */
+export function buildTransferLegs(p: TransferLegParams): (typeof ledgerEntries.$inferInsert)[] {
+  const common = {
+    householdId: p.householdId,
+    entryDate: p.entryDate,
+    categoryId: null,
+    amountCents: p.amountCents,
+    cleared: p.cleared,
+    clearedDate: p.cleared ? p.entryDate : null,
+    source: 'manual' as const,
+    note: p.note,
+    transferId: p.transferId,
+  };
+  return [
+    {
+      ...common,
+      accountId: p.fromAccountId,
+      payee: `Transfer to ${p.toAccountName}`,
+      direction: 'debit',
+    },
+    {
+      ...common,
+      accountId: p.toAccountId,
+      payee: `Transfer from ${p.fromAccountName}`,
+      direction: 'credit',
+    },
+  ];
 }
 
 /**
@@ -184,6 +243,51 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send({ data: toDto(row) });
   });
 
+  // POST /transfer -> move money between two accounts as two linked legs.
+  // Debits the source and credits the destination by the same amount/date, both
+  // categoryless and sharing a transferId. Works for any direction: a HELOC ->
+  // checking transfer is a draw (debit HELOC), checking -> HELOC is a paydown
+  // (credit HELOC), both via the same "debit source / credit destination" rule.
+  app.post('/transfer', async (req, reply) => {
+    const { householdId } = requireSession(req);
+    const body = transferBody.parse(req.body);
+    if (body.fromAccountId === body.toAccountId) {
+      throw badRequest('Transfer must be between two different accounts');
+    }
+
+    const acctRows = await db
+      .select()
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.householdId, householdId),
+          inArray(accounts.id, [body.fromAccountId, body.toAccountId]),
+        ),
+      );
+    const from = acctRows.find((a) => a.id === body.fromAccountId);
+    const to = acctRows.find((a) => a.id === body.toAccountId);
+    if (!from || !to) throw badRequest('Account does not belong to this household');
+
+    const values = buildTransferLegs({
+      householdId,
+      fromAccountId: from.id,
+      fromAccountName: from.name,
+      toAccountId: to.id,
+      toAccountName: to.name,
+      amountCents: body.amountCents,
+      entryDate: body.entryDate,
+      cleared: body.cleared ?? false,
+      note: body.note ?? null,
+      transferId: randomUUID(),
+    });
+
+    const legs = await db.transaction(async (tx) =>
+      tx.insert(ledgerEntries).values(values).returning(),
+    );
+
+    return reply.code(201).send({ data: legs.map(toDto) });
+  });
+
   // PUT /:id -> update entry
   app.put('/:id', async (req, reply) => {
     const { householdId } = requireSession(req);
@@ -221,17 +325,34 @@ const ledgerRoutes: FastifyPluginAsync = async (app) => {
     return reply.send({ data: toDto(row) });
   });
 
-  // DELETE /:id
+  // DELETE /:id -> delete the entry. If it's a transfer leg, delete both legs so
+  // a transfer is never left half-deleted.
   app.delete('/:id', async (req, reply) => {
     const { householdId } = requireSession(req);
     const id = Number((req.params as { id: string }).id);
     const row = (
       await db
-        .delete(ledgerEntries)
+        .select()
+        .from(ledgerEntries)
         .where(and(eq(ledgerEntries.id, id), eq(ledgerEntries.householdId, householdId)))
-        .returning()
+        .limit(1)
     )[0];
     if (!row) throw notFound('Ledger entry not found');
+
+    if (row.transferId) {
+      await db
+        .delete(ledgerEntries)
+        .where(
+          and(
+            eq(ledgerEntries.householdId, householdId),
+            eq(ledgerEntries.transferId, row.transferId),
+          ),
+        );
+    } else {
+      await db
+        .delete(ledgerEntries)
+        .where(and(eq(ledgerEntries.id, id), eq(ledgerEntries.householdId, householdId)));
+    }
     return reply.send({ data: { ok: true } });
   });
 

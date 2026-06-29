@@ -258,6 +258,7 @@ function ledgerToDto(row: typeof ledgerEntries.$inferSelect): LedgerEntry {
     clearedDate: row.clearedDate,
     source: row.source as LedgerEntry['source'],
     note: row.note,
+    transferId: row.transferId,
   };
 }
 
