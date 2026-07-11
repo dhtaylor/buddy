@@ -1,0 +1,21 @@
+# LAN DNS for the household, running on lilnas (deployed to /srv/dns/ on the NAS).
+# Resolves buddy.lan -> 192.168.1.197 and forwards everything else upstream, so
+# every device gets buddy.lan by pointing the router's DHCP DNS at 192.168.1.197.
+# Separate from the Buddy app stack on purpose (independent lifecycle).
+# Bound to the LAN IP only, to avoid colliding with systemd-resolved's loopback stub.
+services:
+  dns:
+    image: coredns/coredns:1.11.3
+    container_name: buddy-dns
+    restart: unless-stopped
+    command: -conf /etc/coredns/Corefile
+    volumes:
+      - ./Corefile:/etc/coredns/Corefile:ro
+    ports:
+      - "192.168.1.197:53:53/udp"
+      - "192.168.1.197:53:53/tcp"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
