@@ -25,8 +25,14 @@ ENV HOST=0.0.0.0
 ENV WEB_DIST_PATH=/app/web/dist
 ENV BACKUP_DIR=/backups
 
-# postgresql-client provides pg_dump for in-app backups.
-RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
+# postgresql-client-16 provides a pg_dump matching the Postgres 16 server, for
+# the in-app "Back up now" feature. (Debian bookworm's default postgresql-client
+# is v15, which refuses to dump a newer server.) Install from the PGDG apt repo.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update && apt-get install -y --no-install-recommends postgresql-client-16 \
   && rm -rf /var/lib/apt/lists/*
 
 # Copy the whole built tree (simple + reliable for a small home app).
@@ -37,7 +43,6 @@ RUN chmod +x /app/docker-entrypoint.sh
 
 RUN mkdir -p /backups
 EXPOSE 8080
-# Take a best-effort pre-migration backup, apply migrations on boot, then
-# start. (Register the first user to bootstrap the admin; or run
-# `npm run seed` once for demo data.)
+# Apply migrations on boot, then start. (Pre-migration snapshots are taken
+# host-side by the deploy script; see docker-entrypoint.sh.)
 CMD ["sh", "/app/docker-entrypoint.sh"]
