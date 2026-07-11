@@ -1,5 +1,5 @@
 <#
-  Buddy — deploy to the lilnas Docker Compose stack (production).
+  Buddy - deploy to the lilnas Docker Compose stack (production).
 
   Deploys a new image tag to the `buddy` service running on the Debian NAS
   reachable via the SSH alias `lilnas` (see ~/.ssh/config), by updating
@@ -41,14 +41,14 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Local fallback record of the previous tag, in case the remote state file
-# is ever unavailable. Keyed by nothing in particular — one deploy history
+# is ever unavailable. Keyed by nothing in particular - one deploy history
 # per checkout is enough for this project.
 $LocalStateFile = Join-Path $PSScriptRoot ".lilnas_previous_tag"
 $RemoteStateFile = "$RemoteDir/.previous_tag"
 
 function Invoke-Remote {
     param([string]$Command)
-    ssh $RemoteHost $Command
+    ssh -n -o BatchMode=yes $RemoteHost $Command
     if ($LASTEXITCODE -ne 0) {
         throw "ssh command failed (exit $LASTEXITCODE): $Command"
     }
@@ -56,7 +56,7 @@ function Invoke-Remote {
 
 function Get-RemoteOutput {
     param([string]$Command)
-    $output = ssh $RemoteHost $Command
+    $output = ssh -n -o BatchMode=yes $RemoteHost $Command
     if ($LASTEXITCODE -ne 0) {
         throw "ssh command failed (exit $LASTEXITCODE): $Command"
     }
@@ -111,14 +111,14 @@ function Invoke-ComposeUp {
 function Invoke-PreDeploySnapshot {
     # Version-matched pre-migration snapshot (gap #2): dump the live DB from the
     # db container's own pg_dump BEFORE the new image (which may run migrations)
-    # comes up. Best-effort — warn but don't block the deploy (nightly cron also
+    # comes up. Best-effort - warn but don't block the deploy (nightly cron also
     # covers backups), since e.g. a first-ever deploy has no data yet.
     param([string]$Sha)
     Write-Host "Taking pre-deploy DB snapshot on $RemoteHost..." -ForegroundColor Cyan
     $short = if ($Sha.Length -ge 12) { $Sha.Substring(0, 12) } else { $Sha }
-    ssh $RemoteHost "/srv/buddy/backup.sh pre-deploy-$short"
+    ssh -n -o BatchMode=yes $RemoteHost "/srv/buddy/backup.sh pre-deploy-$short"
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "WARNING: pre-deploy snapshot failed — continuing (nightly backups still apply)." -ForegroundColor Yellow
+        Write-Host "WARNING: pre-deploy snapshot failed - continuing (nightly backups still apply)." -ForegroundColor Yellow
     } else {
         Write-Host "Pre-deploy snapshot written." -ForegroundColor Green
     }
@@ -158,7 +158,7 @@ function Invoke-Rollback {
 
     $previousTag = Get-PreviousTag
     if (-not $previousTag) {
-        Write-Host "No previous tag on record — cannot auto-rollback." -ForegroundColor Red
+        Write-Host "No previous tag on record - cannot auto-rollback." -ForegroundColor Red
         exit 1
     }
 
@@ -167,11 +167,11 @@ function Invoke-Rollback {
     Invoke-ComposeUp -Pull
 
     if (Test-Health) {
-        Write-Host "Rollback succeeded — $previousTag is healthy." -ForegroundColor Green
+        Write-Host "Rollback succeeded - $previousTag is healthy." -ForegroundColor Green
         Show-RemoteStatus
         exit 1
     } else {
-        Write-Host "Rollback FAILED — $previousTag did not become healthy either. Manual intervention required." -ForegroundColor Red
+        Write-Host "Rollback FAILED - $previousTag did not become healthy either. Manual intervention required." -ForegroundColor Red
         Show-RemoteStatus
         exit 1
     }
@@ -183,7 +183,7 @@ if ($Mode -eq "rollback") {
     Write-Host "== Buddy rollback on $RemoteHost ==" -ForegroundColor Cyan
     $previousTag = Get-PreviousTag
     if (-not $previousTag) {
-        Write-Host "No previous tag on record — nothing to roll back to." -ForegroundColor Red
+        Write-Host "No previous tag on record - nothing to roll back to." -ForegroundColor Red
         exit 1
     }
     Write-Host "Restoring previous tag: $previousTag" -ForegroundColor Cyan
@@ -191,11 +191,11 @@ if ($Mode -eq "rollback") {
     Invoke-ComposeUp -Pull
 
     if (Test-Health) {
-        Write-Host "Rollback succeeded — $previousTag is healthy." -ForegroundColor Green
+        Write-Host "Rollback succeeded - $previousTag is healthy." -ForegroundColor Green
         Show-RemoteStatus
         exit 0
     } else {
-        Write-Host "Rollback FAILED — $previousTag did not become healthy." -ForegroundColor Red
+        Write-Host "Rollback FAILED - $previousTag did not become healthy." -ForegroundColor Red
         Show-RemoteStatus
         exit 1
     }
@@ -212,7 +212,7 @@ elseif ($Mode -eq "deploy") {
 
     $currentTag = Get-RemoteTag
     if (-not $currentTag) {
-        Write-Host "Could not read current BUDDY_TAG from remote .env — proceeding without a rollback point." -ForegroundColor Yellow
+        Write-Host "Could not read current BUDDY_TAG from remote .env - proceeding without a rollback point." -ForegroundColor Yellow
     } else {
         Write-Host "Currently running tag: $currentTag" -ForegroundColor Cyan
         Save-PreviousTag -Tag $currentTag
@@ -223,7 +223,7 @@ elseif ($Mode -eq "deploy") {
     Invoke-ComposeUp -Pull
 
     if (Test-Health) {
-        Write-Host "Deploy succeeded — $Sha is healthy." -ForegroundColor Green
+        Write-Host "Deploy succeeded - $Sha is healthy." -ForegroundColor Green
         Show-RemoteStatus
         exit 0
     } else {
