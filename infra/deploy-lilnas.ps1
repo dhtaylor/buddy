@@ -108,6 +108,22 @@ function Invoke-ComposeUp {
     Invoke-Remote "cd '$RemoteDir' && docker compose up -d"
 }
 
+function Invoke-PreDeploySnapshot {
+    # Version-matched pre-migration snapshot (gap #2): dump the live DB from the
+    # db container's own pg_dump BEFORE the new image (which may run migrations)
+    # comes up. Best-effort — warn but don't block the deploy (nightly cron also
+    # covers backups), since e.g. a first-ever deploy has no data yet.
+    param([string]$Sha)
+    Write-Host "Taking pre-deploy DB snapshot on $RemoteHost..." -ForegroundColor Cyan
+    $short = if ($Sha.Length -ge 12) { $Sha.Substring(0, 12) } else { $Sha }
+    ssh $RemoteHost "/srv/buddy/backup.sh pre-deploy-$short"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "WARNING: pre-deploy snapshot failed — continuing (nightly backups still apply)." -ForegroundColor Yellow
+    } else {
+        Write-Host "Pre-deploy snapshot written." -ForegroundColor Green
+    }
+}
+
 function Test-Health {
     Write-Host "Health-checking $HealthUrl ..." -ForegroundColor Cyan
     for ($i = 1; $i -le 10; $i++) {
@@ -202,6 +218,7 @@ elseif ($Mode -eq "deploy") {
         Save-PreviousTag -Tag $currentTag
     }
 
+    Invoke-PreDeploySnapshot -Sha $Sha
     Set-RemoteTag -Tag $Sha
     Invoke-ComposeUp -Pull
 
