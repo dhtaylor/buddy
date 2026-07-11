@@ -45,7 +45,8 @@ services:
       # Folder for pg_dump backups, on the NAS storage pool (bind mount).
       - ${BUDDY_DATA_DIR}/backups:/backups
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      # node:22-bookworm-slim has no wget/curl, so probe /health with node's built-in fetch.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 5
