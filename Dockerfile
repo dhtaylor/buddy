@@ -32,8 +32,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends postgresql-clie
 # Copy the whole built tree (simple + reliable for a small home app).
 COPY --from=build /app /app
 
+# docker-entrypoint.sh is already present via the COPY --from=build above.
+RUN chmod +x /app/docker-entrypoint.sh
+
 RUN mkdir -p /backups
 EXPOSE 8080
-# Apply migrations on boot, then start. (Register the first user to bootstrap the
-# admin; or run `npm run seed` once for demo data.)
-CMD ["sh", "-c", "npm run db:migrate && node server/dist/index.js"]
+# Take a best-effort pre-migration backup, apply migrations on boot, then
+# start. (Register the first user to bootstrap the admin; or run
+# `npm run seed` once for demo data.)
+CMD ["sh", "/app/docker-entrypoint.sh"]

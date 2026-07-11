@@ -15,6 +15,7 @@ backups/
 # Env
 .env
 .env.local
+infra/lilnas/.env
 
 # Caddy local CA root cert (extracted per-deployment for client trust install)
 buddy-rootCA.crt

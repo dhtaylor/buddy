@@ -7,6 +7,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+      },
       manifest: {
         name: 'Buddy — Family Finance',
         short_name: 'Buddy',

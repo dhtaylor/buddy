@@ -5,8 +5,10 @@ import cookie from '@fastify/cookie';
 import secureSession from '@fastify/secure-session';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
+import { sql } from 'drizzle-orm';
 import { ZodError } from 'zod';
 import { config } from './config.js';
+import { db } from './db/index.js';
 import { ApiException, sendError } from './lib/errors.js';
 
 import authRoutes from './routes/auth.js';
@@ -62,6 +64,19 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
   });
   await app.register(multipart);
+
+  // Unauthenticated liveness endpoint for the Docker healthcheck. Registered
+  // outside the /api group (and any auth hook) so it's reachable with no
+  // session cookie. Checks the DB with a trivial query so a dead DB is
+  // reported as unhealthy rather than the process just being "up".
+  app.get('/health', async (_req, reply) => {
+    try {
+      await db.execute(sql`select 1`);
+      return reply.code(200).send({ status: 'ok' });
+    } catch {
+      return reply.code(503).send({ status: 'degraded' });
+    }
+  });
 
   // Uniform error envelope: { error: { code, message } }.
   app.setErrorHandler((err, _req, reply) => {

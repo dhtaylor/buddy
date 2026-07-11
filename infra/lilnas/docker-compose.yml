@@ -1,0 +1,82 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: buddy-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: buddy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: buddy
+    volumes:
+      # Persist the Postgres data directory on the NAS storage pool (bind mount).
+      - ${BUDDY_DATA_DIR}/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buddy -d buddy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  buddy:
+    image: ghcr.io/dhtaylor/buddy:${BUDDY_TAG:-latest}
+    container_name: buddy
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      HOST: 0.0.0.0
+      DATABASE_URL: postgres://buddy:${POSTGRES_PASSWORD}@db:5432/buddy
+      SESSION_KEY: ${SESSION_KEY}
+      # Plain-HTTP LAN deployment (phones use http://<nas-ip>:8080) — MUST stay
+      # false. A Secure cookie is silently dropped over HTTP on non-localhost
+      # hosts, which breaks login.
+      COOKIE_SECURE: "false"
+      BACKUP_DIR: /backups
+    volumes:
+      # Folder for pg_dump backups, on the NAS storage pool (bind mount).
+      - ${BUDDY_DATA_DIR}/backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # HTTPS reverse proxy so browsers get a trusted padlock on the LAN without
+  # disabling their global HTTPS setting. Terminates TLS on 443 and proxies to
+  # the app. Phones can still use http://<nas-ip>:8080 directly.
+  caddy:
+    image: caddy:2-alpine
+    container_name: buddy-caddy
+    restart: unless-stopped
+    depends_on:
+      - buddy
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  caddy-data:
+  caddy-config:

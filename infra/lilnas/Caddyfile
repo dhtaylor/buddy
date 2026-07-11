@@ -1,0 +1,13 @@
+# HTTPS reverse proxy for the LAN. Caddy issues a cert from its own local CA for
+# the hostname below and proxies to the Buddy app. (A hostname is used instead
+# of a raw IP because browsers/Caddy don't serve TLS reliably for bare IPs.)
+# On each device: map this name to the NAS's IP (hosts file) and install Caddy's
+# root CA — see README "HTTPS on the LAN".
+{
+	auto_https disable_redirects
+}
+
+https://buddy.lan {
+	tls internal
+	reverse_proxy buddy:8080
+}
