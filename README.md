@@ -10,9 +10,9 @@ User guides: [`docs/heloc.md`](./docs/heloc.md) — the optional HELOC cash-swee
 
 ## Prerequisites
 - Node 20+ and npm.
-- Docker Desktop (provides Postgres locally and runs the app in production).
+- Docker Desktop (provides Postgres for local dev).
 
-## Local development
+## Local development (Windows PC — dev only, not production)
 ```bash
 docker compose up -d db   # local Postgres (localhost:5432; bound to 127.0.0.1)
 npm install
@@ -22,52 +22,54 @@ npm run dev               # web on :5173 (proxies /api), server on :8080
 ```
 Other scripts: `npm run build` (all workspaces), `npm test` (full suite — unit + API integration tests; runs on in-process **PGlite**, so **no running DB/server needed**), `npm run db:generate` (regenerate migration SQL after editing the schema — run inside `server/`), `npm run backup` (pg_dump snapshot).
 
-## Deploy with Docker (always-on Windows PC)
-```bash
-docker compose up -d --build
+## Production: lilnas (Raspberry Pi 5 NAS)
+Production runs on **`lilnas`**, a Raspberry Pi 5 (ARM64) running OpenMediaVault 7 / Debian
+bookworm at `192.168.1.197`. The stack lives at `/srv/buddy/` on the NAS (Docker Compose:
+`infra/lilnas/docker-compose.yml`) — `buddy` (image pulled from `ghcr.io/dhtaylor/buddy`, arm64),
+`buddy-db` (`postgres:16-alpine`), `buddy-caddy` (:443, `buddy.lan`). Postgres data and backups
+live on the **RAID5 storage pool** via bind mounts under `BUDDY_DATA_DIR`
+(`/srv/dev-disk-by-uuid-.../buddy/{pgdata,backups}`). Secrets (`SESSION_KEY`,
+`POSTGRES_PASSWORD`, `BUDDY_TAG`, `BUDDY_DATA_DIR`) live in `/srv/buddy/.env` on the NAS only —
+not committed.
+
+**Release flow:** push to `main` → GitHub Actions builds a **linux/arm64** image and pushes it to
+GHCR (private registry; the NAS authenticates via a `read:packages` token set up with
+`docker login`). Deploy from the Windows dev box with:
+```powershell
+pwsh ./infra/deploy-lilnas.ps1
 ```
-Runs Postgres + the app together. App: `http://localhost:8080` on the host; `http://<pc-ip>:8080`
-from a phone on the LAN. Postgres data persists in `./data/pg`. Set a real `SESSION_KEY`
-(64 hex: `openssl rand -hex 32`) and `COOKIE_SECURE=true` (if behind HTTPS) in `docker-compose.yml`.
+This records the previous tag, takes a pre-deploy DB snapshot, sets `BUDDY_TAG` in the remote
+`.env`, pulls the image, `docker compose up -d`, health-gates on `/health`, and
+**auto-rolls-back** on failure. To roll back manually: `pwsh ./infra/deploy-lilnas.ps1 rollback`
+(re-pins the previous tag).
+
+Migrations auto-apply on container start (the entrypoint runs `db:migrate` then starts the
+server) — there is no manual migration step.
 
 ### Backups
-`npm run backup` runs `pg_dump` to `./backups/buddy-YYYYMMDD-HHMMSS.sql` (keeps the most recent 30;
-override with `BACKUP_KEEP`). Also available in the app: **System Settings → Backups → Back up now**.
-Nightly on the Windows host via Task Scheduler:
-```powershell
-$action  = New-ScheduledTaskAction -Execute "npm" -Argument "run backup" -WorkingDirectory "C:\DATA\claude\projects\personal\buddy"
-$trigger = New-ScheduledTaskTrigger -Daily -At 2am
-Register-ScheduledTask -TaskName "Buddy nightly backup" -Action $action -Trigger $trigger -RunLevel Highest
-```
-
-## Deploy to Azure (App Service + Postgres + Key Vault)
-```powershell
-az login
-pwsh ./infra/deploy.ps1 -ResourceGroup buddy-rg -Location eastus
-```
-Provisions: Azure Container Registry (builds the image in the cloud — no local Docker), **Azure
-Database for PostgreSQL Flexible Server** (Burstable B1ms), **Key Vault** (SESSION_KEY + DB
-connection string), and a **Linux App Service for Containers** (B1) whose **managed identity**
-reads those secrets via Key Vault references. **HTTPS is automatic**, `NODE_ENV=production` turns
-on the `Secure` cookie, and DB migrations run on container start. First visit → register the first
-user (becomes the system admin). ~$25–30/mo. Requires Contributor + User Access Administrator
-(role assignments are created). Review the script before running.
+A nightly **cron job on the NAS** runs `/srv/buddy/backup.sh`, which dumps via `buddy-db`'s own
+`pg_dump` (version-matched to Postgres 16) to `${BUDDY_DATA_DIR}/backups/nightly-*.sql` (keeps the
+most recent 30). `infra/deploy-lilnas.ps1` also takes a `pre-deploy-<sha>` snapshot before every
+deploy. Also available in the app: **System Settings → Backups → Back up now** — this works
+because the app image ships `postgresql-client-16`.
 
 ### Security
 - Strict same-origin **Content-Security-Policy** + `X-Content-Type-Options`, `Referrer-Policy`,
   `X-Frame-Options` on every response.
-- bcrypt passwords; HttpOnly **encrypted session cookie** (`Secure` in production); per-request
-  household-membership check; open registration closes after the first admin.
+- bcrypt passwords; HttpOnly **encrypted session cookie**; per-request household-membership
+  check; open registration closes after the first admin.
 - **Idle auto-logout** clears the in-memory cache after inactivity (default 15 min; set
   `VITE_IDLE_MINUTES` at web build time).
 - Keep the repo **private** — `resource photos/` contain real financial data.
+- `COOKIE_SECURE=false` on lilnas — it's a plain-HTTP LAN deployment; a `Secure` cookie is
+  silently dropped over HTTP on a non-localhost host, which would break login.
 
-### Windows Firewall (LAN access for her phone)
-Allow inbound TCP 8080 once, from an **elevated** PowerShell:
-```powershell
-New-NetFirewallRule -DisplayName "Buddy 8080" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8080
-```
-Find the PC's LAN IP with `ipconfig`, then open `http://<that-ip>:8080` on the phone and "Add to Home Screen."
+### Access
+- Phones: `http://192.168.1.197:8080`.
+- Desktops: `https://buddy.lan` (Caddy local CA — the same CA was migrated from the old Windows
+  Caddy setup, so existing devices keep trusting it; new devices need the NAS Caddy root
+  installed). Each device needs `buddy.lan` → `192.168.1.197` (a hosts entry or a LAN DNS
+  record).
 
 ## Library choices
 - **Database:** PostgreSQL via Drizzle (`postgres` driver in production; **PGlite** in-process for tests).

@@ -26,8 +26,8 @@ speculative. Correctness of money math above all.
 
 | Decision | Choice |
 |---|---|
-| Hosting | Self-hosted on an always-on **Windows PC via Docker**; reachable on the home **LAN** (`http://<pc-ip>:8080`). Public web deferred. |
-| Storage | **PostgreSQL** (Drizzle). Local/home via Docker Compose; Azure via Postgres Flexible Server. Tests run on in-process **PGlite**. |
+| Hosting | Self-hosted on **`lilnas`** (Raspberry Pi 5 / OpenMediaVault) via Docker Compose; reachable on the home **LAN** (`http://192.168.1.197:8080`, or `https://buddy.lan` via Caddy). Public web deferred. The Windows PC is dev-only. |
+| Storage | **PostgreSQL** (Drizzle). Docker Compose on lilnas, data on the RAID5 pool via bind mount. Tests run on in-process **PGlite**. |
 | Bank data | **CSV/OFX file import** (no Plaid/bank API). Used to auto-match & clear manual entries. |
 | Ledger ↔ Budget | **Auto-linked by category** — budget "Actual" is derived from the ledger, never hand-copied. |
 | Multi-tenancy | Multiple **households**, fully data-segregated. A user can belong to many and switch. |
@@ -60,16 +60,36 @@ speculative. Correctness of money math above all.
 
 ## 4. Deployment
 
-**Home / self-host (Windows PC):** `docker compose up -d --build` runs Postgres + the app together;
-Postgres data persists in `./data/pg`, `backups/` mounted for pg_dump snapshots.
+**Production (lilnas):** Runs on `lilnas`, a Raspberry Pi 5 (ARM64) running OpenMediaVault 7 /
+Debian bookworm at `192.168.1.197`. Docker Compose stack at `/srv/buddy/` on the NAS: `buddy`
+(image pulled from `ghcr.io/dhtaylor/buddy`, arm64), `buddy-db` (`postgres:16-alpine`),
+`buddy-caddy` (:443, `buddy.lan`). Postgres data and backups persist on the **RAID5 storage pool**
+via bind mounts under `BUDDY_DATA_DIR` (`/srv/dev-disk-by-uuid-.../buddy/{pgdata,backups}`).
+Secrets (`SESSION_KEY`, `POSTGRES_PASSWORD`, `BUDDY_TAG`, `BUDDY_DATA_DIR`) live in
+`/srv/buddy/.env` on the NAS only, not committed. `COOKIE_SECURE=false` (plain-HTTP LAN).
+Migrations auto-apply on container start.
 
-**Azure (cloud):** `az login` then `pwsh ./infra/deploy.ps1 -ResourceGroup buddy-rg` provisions ACR
-(cloud image build), Postgres Flexible Server (B1ms), Key Vault (SESSION_KEY + DB URL), and a Linux
-App Service for Containers whose managed identity reads the secrets via Key Vault references. HTTPS is
-automatic; `NODE_ENV=production` enables the `Secure` cookie; migrations run on container start. ~$25–30/mo.
-- Windows Firewall: allow inbound TCP **8080** (one-time elevated `New-NetFirewallRule`).
-- On her phone (same Wi-Fi): open `http://<pc-ip>:8080` **with `http://` explicit** (PWA install
-  requires HTTPS/localhost, so full "install" only works over HTTPS — browser use works over HTTP).
+**Release flow:** push to `main` → GitHub Actions builds a **linux/arm64** image and pushes it to
+GHCR (private; the NAS pulls via a `read:packages` token set up with `docker login`). Deploy with
+`infra/deploy-lilnas.ps1` (run from the Windows dev box) — records the previous tag, takes a
+pre-deploy DB snapshot, sets `BUDDY_TAG`, pulls, `docker compose up -d`, health-gates on
+`/health`, and auto-rolls-back on failure. `infra/deploy-lilnas.ps1 rollback` re-pins the previous
+tag.
+
+**Dev (Windows PC):** `docker compose up -d db` (local Postgres only) + `npm run dev`. The
+Windows PC is not production.
+
+**Backups:** a nightly cron job on the NAS runs `/srv/buddy/backup.sh`, which dumps via
+`buddy-db`'s own `pg_dump` (version-matched to Postgres 16) and keeps the most recent 30 nightly
+snapshots. The deploy script also takes a `pre-deploy-<sha>` snapshot before every deploy. The
+in-app "Back up now" (System Settings → Backups) works because the app image ships
+`postgresql-client-16`.
+
+**Access:** phones → `http://192.168.1.197:8080`; desktops → `https://buddy.lan` (Caddy local CA
+— migrated from the old Windows Caddy setup, so existing devices keep trusting it; new devices
+need the NAS Caddy root installed). Each device needs `buddy.lan` → `192.168.1.197` (hosts entry
+or LAN DNS record). PWA "install" requires HTTPS/localhost, so full install works via
+`https://buddy.lan`; plain browser use works over `http://192.168.1.197:8080` too.
 - Demo/seed login: `demo@buddy.local` / `password123` (the seed user is a system admin).
 
 ---
@@ -218,8 +238,9 @@ imported/untagged spend is never lost. Archived categories still appear here.
 - **Pre-commit hook** (`.githooks/pre-commit`, wired via `core.hooksPath` + `prepare` script):
   runs `npm run build` (type-check) + `npm test`; blocks the commit on failure
   (bypass: `git commit --no-verify`).
-- **CI:** `.github/workflows/ci.yml` runs `npm ci → build → test` on push/PR (Node 22) — activates
-  once a GitHub remote is added.
+- **CI/CD:** `.github/workflows/ci.yml` runs `npm ci → build → test` on push/PR (Node 22), and on
+  `main` also builds a `linux/arm64` image and pushes it to `ghcr.io/dhtaylor/buddy` (the
+  `publish-image` job). Deploy to lilnas with `infra/deploy-lilnas.ps1` (see §4).
 
 ---
 
@@ -234,8 +255,8 @@ In `server/`: `npm run db:generate` (after schema edits) · `npm run start` (run
 ## 12. Open action items / next steps
 
 **Housekeeping**
-- [ ] Commit this session's work to git (currently **staged but uncommitted**) and add a GitHub
-      remote so CI runs.
+- [x] Git + GitHub remote (`github.com/dhtaylor/buddy`) + CI/CD live; production migrated to lilnas.
+- [ ] Repoint any remaining household devices to `buddy.lan` / `192.168.1.197` (or add a LAN DNS record).
 
 **Requested-but-not-built (offered, deferred)**
 - [ ] **Auto-seed default categories** when a household is created (new households start empty —
