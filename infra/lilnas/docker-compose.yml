@@ -68,8 +68,11 @@ services:
       - buddy
     ports:
       - "443:443"
+      # Plain-HTTP port to hand out the Caddy root CA cert (:80 is OMV, :8080 the app).
+      - "8081:8081"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
       - caddy-data:/data
       - caddy-config:/config
     logging:
