@@ -73,8 +73,6 @@ export default function Home() {
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <h1 className="text-2xl font-bold">Home</h1>
-
       {/* Period navigation — governs the HELOC sweep totals and the budget summary below. */}
       <div className="flex items-center justify-between gap-2">
         <button className="btn-secondary py-2" onClick={() => step(-1)} aria-label="Previous week">
@@ -94,6 +92,8 @@ export default function Home() {
           Next ›
         </button>
       </div>
+
+      <h1 className="text-2xl font-bold">Home</h1>
 
       {/* Running balance */}
       <div
