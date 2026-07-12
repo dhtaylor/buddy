@@ -73,26 +73,6 @@ export default function Home() {
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      {/* Period navigation — governs the HELOC sweep totals and the budget summary below. */}
-      <div className="flex items-center justify-between gap-2">
-        <button className="btn-secondary py-2" onClick={() => step(-1)} aria-label="Previous week">
-          ‹ Prev
-        </button>
-        <div className="text-center">
-          <div className="text-sm font-semibold">{summary.data?.period.label ?? '…'}</div>
-          {isCurrentWeek ? (
-            <div className="text-xs text-gray-400">This week</div>
-          ) : (
-            <button className="text-xs text-blue-600 underline" onClick={() => setDate(today())}>
-              Jump to this week
-            </button>
-          )}
-        </div>
-        <button className="btn-secondary py-2" onClick={() => step(1)} aria-label="Next week">
-          Next ›
-        </button>
-      </div>
-
       <h1 className="text-2xl font-bold">Home</h1>
 
       {/* Running balance */}
@@ -152,8 +132,26 @@ export default function Home() {
       {/* HELOC cash-sweep cards */}
       {showHeloc && heloc.data?.map((h) => <HelocCard key={h.accountId} h={h} />)}
 
-      {/* Weekly summary */}
+      {/* Weekly summary with period navigation */}
       <div>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <button className="btn-secondary py-2" onClick={() => step(-1)} aria-label="Previous week">
+            ‹ Prev
+          </button>
+          <div className="text-center">
+            <div className="text-sm font-semibold">{summary.data?.period.label ?? '…'}</div>
+            {isCurrentWeek ? (
+              <div className="text-xs text-gray-400">This week</div>
+            ) : (
+              <button className="text-xs text-blue-600 underline" onClick={() => setDate(today())}>
+                Jump to this week
+              </button>
+            )}
+          </div>
+          <button className="btn-secondary py-2" onClick={() => step(1)} aria-label="Next week">
+            Next ›
+          </button>
+        </div>
         {summary.isLoading ? (
           <div className="grid grid-cols-3 gap-2">
             <Skeleton className="h-16 w-full rounded-xl" />
