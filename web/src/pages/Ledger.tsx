@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { NotebookText, Receipt } from 'lucide-react';
-import { formatCents, parseCents, type Category, type EntryDirection } from '@buddy/shared';
+import { ChevronDown, ChevronRight, NotebookText, Receipt } from 'lucide-react';
+import {
+  formatCents,
+  parseCents,
+  periodLabel,
+  weeklyPeriod,
+  type Category,
+  type EntryDirection,
+} from '@buddy/shared';
 import EmptyState from '../components/EmptyState.js';
 import { SkeletonCard } from '../components/Skeleton.js';
 import { useAccounts } from '../api/accounts.js';
@@ -135,6 +142,56 @@ export default function Ledger() {
     list.sort((a, b) => (a.entryDate < b.entryDate ? 1 : a.entryDate > b.entryDate ? -1 : b.id - a.id));
     return list;
   }, [entries]);
+
+  // Bucket the (already newest-first) list into Sun–Sat weeks. Insertion order
+  // therefore puts the newest week first, and each group keeps the sort above.
+  const weekGroups = useMemo(() => {
+    type WeekGroup = {
+      startDate: string;
+      endDate: string;
+      entries: LedgerEntryWithBalance[];
+      netCents: number;
+    };
+    const groups: WeekGroup[] = [];
+    const byStart = new Map<string, WeekGroup>();
+    for (const e of display) {
+      const { startDate, endDate } = weeklyPeriod(e.entryDate);
+      let g = byStart.get(startDate);
+      if (!g) {
+        g = { startDate, endDate, entries: [], netCents: 0 };
+        byStart.set(startDate, g);
+        groups.push(g);
+      }
+      g.entries.push(e);
+      g.netCents += e.direction === 'credit' ? e.amountCents : -e.amountCents;
+    }
+    return groups;
+  }, [display]);
+
+  // Computed per render, not memoized: a PWA left open past midnight must not
+  // keep yesterday's week as "current".
+  const today = todayISO();
+  const currentWeekStart = weeklyPeriod(today).startDate;
+
+  // One week is open by default and the rest are closed. Normally that's the
+  // current week, but if it has no entries (Sunday morning, or an account whose
+  // last activity was weeks ago) fall back to the newest group so the user never
+  // lands on a page of nothing but collapsed headers.
+  const defaultOpenStart = weekGroups.some((g) => g.startDate === currentWeekStart)
+    ? currentWeekStart
+    : weekGroups[0]?.startDate;
+
+  // Holds only the weeks the user has explicitly toggled (keyed by week start
+  // date, not index) so refetches and filter changes don't undo their choice.
+  const [weekOverrides, setWeekOverrides] = useState<Record<string, boolean>>({});
+
+  // Week labels omit the year, so weeks in other years would be ambiguous across
+  // a full-history ledger. Qualify anything outside the current calendar year.
+  const currentYear = today.slice(0, 4);
+  function weekLabel(g: { startDate: string; endDate: string }): string {
+    const startYear = g.startDate.slice(0, 4);
+    return startYear === currentYear ? periodLabel(g) : `${periodLabel(g)}, ${startYear}`;
+  }
 
   // Current balance to show prominently: latest running balance of the selected
   // account, or the sum of each account's latest running balance when unfiltered.
@@ -493,123 +550,163 @@ export default function Ledger() {
           cta={{ label: 'Add transaction', onClick: openAdd }}
         />
       ) : (
-        <ul className="flex flex-col gap-2">
-          {display.map((e) => {
-            const cat = e.categoryId !== null ? catById.get(e.categoryId) : undefined;
-            const signed = e.direction === 'credit' ? e.amountCents : -e.amountCents;
+        <div className="flex flex-col gap-3">
+          {weekGroups.map((g) => {
+            // Select mode forces every group open: uncategorized entries are
+            // mostly old ones, and bulk-selecting rows the user can't see or
+            // deselect is worse than useless. Derived rather than written into
+            // weekOverrides, so exiting select mode restores their own state.
+            const expanded =
+              selectMode || (weekOverrides[g.startDate] ?? g.startDate === defaultOpenStart);
+            const listId = `week-${g.startDate}`;
             return (
-              <li
-                key={e.id}
-                className={`card ${e.cleared ? '' : 'opacity-60'} ${
-                  selectMode && selected.has(e.id) ? 'ring-2 ring-blue-400' : ''
-                }`}
-                onClick={selectMode ? () => toggleSelect(e.id) : undefined}
-              >
-                <div className="flex gap-2">
-                  {selectMode && (
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-5 w-5 shrink-0"
-                      checked={selected.has(e.id)}
-                      onChange={() => toggleSelect(e.id)}
-                      onClick={(ev) => ev.stopPropagation()}
-                    />
-                  )}
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate font-medium">{e.payee}</span>
-                          {e.source === 'imported' && (
-                            <span className="shrink-0 rounded bg-blue-100 px-1.5 text-xs text-blue-700">
-                              imported
-                            </span>
-                          )}
-                          {e.transferId && (
-                            <span className="shrink-0 rounded bg-purple-100 px-1.5 text-xs text-purple-700">
-                              transfer
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {e.entryDate}
-                          {accountFilter === '' && ` · ${acctById.get(e.accountId) ?? 'account'}`}
-                          {cat ? ` · ${cat.name}` : ' · Uncategorized'}
-                        </div>
-                      </div>
-                      <div
-                        className={`shrink-0 text-right font-semibold tabular-nums ${amountColor(signed)}`}
-                      >
-                        {formatCents(signed)}
-                      </div>
-                    </div>
-                    {selectMode ? (
-                      <div className="text-xs tabular-nums text-gray-500">
-                        Bal{' '}
-                        <span className={amountColor(e.runningBalanceCents)}>
-                          {formatCents(e.runningBalanceCents)}
-                        </span>
-                      </div>
+              <section key={g.startDate} className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1 disabled:opacity-50"
+                  aria-expanded={expanded}
+                  aria-controls={listId}
+                  disabled={selectMode}
+                  onClick={() => setWeekOverrides((prev) => ({ ...prev, [g.startDate]: !expanded }))}
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {expanded ? (
+                      <ChevronDown size={16} className="shrink-0 text-gray-500" aria-hidden="true" />
                     ) : (
-                      <>
-                        <div className="flex items-center justify-between text-xs text-gray-500">
-                          <button
-                            className="flex items-center gap-1.5 py-1.5"
-                            onClick={() =>
-                              toggle.mutate({
-                                id: e.id,
-                                cleared: !e.cleared,
-                                clearedDate: !e.cleared ? e.entryDate : null,
-                              })
-                            }
-                          >
-                            <span
-                              className={`inline-flex h-5 w-5 items-center justify-center rounded border ${
-                                e.cleared ? 'border-green-600 bg-green-600 text-white' : 'border-gray-300'
-                              }`}
-                            >
-                              {e.cleared ? '✓' : ''}
-                            </span>
-                            {e.cleared ? 'Cleared' : 'Pending'}
-                          </button>
-                          <span className="tabular-nums">
-                            Bal{' '}
-                            <span className={amountColor(e.runningBalanceCents)}>
-                              {formatCents(e.runningBalanceCents)}
-                            </span>
-                          </span>
-                        </div>
-                        <div className="flex gap-2 pt-1">
-                          {/* Transfers are edited by deleting and re-creating, so
-                              the per-leg edit form is hidden for transfer rows. */}
-                          {!e.transferId && (
-                            <button className="btn-secondary py-1.5" onClick={() => openEdit(e)}>
-                              Edit
-                            </button>
-                          )}
-                          <button
-                            className="btn-danger py-1.5"
-                            onClick={() => {
-                              if (
-                                e.transferId &&
-                                !window.confirm('Delete this transfer? Both legs will be removed.')
-                              ) {
-                                return;
-                              }
-                              del.mutate(e.id);
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </>
+                      <ChevronRight size={16} className="shrink-0 text-gray-500" aria-hidden="true" />
                     )}
-                  </div>
-                </div>
-              </li>
+                    <span className="truncate text-sm font-semibold">{weekLabel(g)}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
+                    <span>
+                      {g.entries.length} {g.entries.length === 1 ? 'entry' : 'entries'}
+                    </span>
+                    <span className={`font-semibold tabular-nums ${amountColor(g.netCents)}`}>
+                      {formatCents(g.netCents)}
+                    </span>
+                  </span>
+                </button>
+                <ul id={listId} className={expanded ? 'flex flex-col gap-2' : 'hidden'}>
+                  {g.entries.map((e) => {
+                    const cat = e.categoryId !== null ? catById.get(e.categoryId) : undefined;
+                    const signed = e.direction === 'credit' ? e.amountCents : -e.amountCents;
+                    return (
+                      <li
+                        key={e.id}
+                        className={`card ${e.cleared ? '' : 'opacity-60'} ${
+                          selectMode && selected.has(e.id) ? 'ring-2 ring-blue-400' : ''
+                        }`}
+                        onClick={selectMode ? () => toggleSelect(e.id) : undefined}
+                      >
+                        <div className="flex gap-2">
+                          {selectMode && (
+                            <input
+                              type="checkbox"
+                              className="mt-1 h-5 w-5 shrink-0"
+                              checked={selected.has(e.id)}
+                              onChange={() => toggleSelect(e.id)}
+                              onClick={(ev) => ev.stopPropagation()}
+                            />
+                          )}
+                          <div className="flex min-w-0 flex-1 flex-col gap-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="truncate font-medium">{e.payee}</span>
+                                  {e.source === 'imported' && (
+                                    <span className="shrink-0 rounded bg-blue-100 px-1.5 text-xs text-blue-700">
+                                      imported
+                                    </span>
+                                  )}
+                                  {e.transferId && (
+                                    <span className="shrink-0 rounded bg-purple-100 px-1.5 text-xs text-purple-700">
+                                      transfer
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {e.entryDate}
+                                  {accountFilter === '' && ` · ${acctById.get(e.accountId) ?? 'account'}`}
+                                  {cat ? ` · ${cat.name}` : ' · Uncategorized'}
+                                </div>
+                              </div>
+                              <div
+                                className={`shrink-0 text-right font-semibold tabular-nums ${amountColor(signed)}`}
+                              >
+                                {formatCents(signed)}
+                              </div>
+                            </div>
+                            {selectMode ? (
+                              <div className="text-xs tabular-nums text-gray-500">
+                                Bal{' '}
+                                <span className={amountColor(e.runningBalanceCents)}>
+                                  {formatCents(e.runningBalanceCents)}
+                                </span>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center justify-between text-xs text-gray-500">
+                                  <button
+                                    className="flex items-center gap-1.5 py-1.5"
+                                    onClick={() =>
+                                      toggle.mutate({
+                                        id: e.id,
+                                        cleared: !e.cleared,
+                                        clearedDate: !e.cleared ? e.entryDate : null,
+                                      })
+                                    }
+                                  >
+                                    <span
+                                      className={`inline-flex h-5 w-5 items-center justify-center rounded border ${
+                                        e.cleared ? 'border-green-600 bg-green-600 text-white' : 'border-gray-300'
+                                      }`}
+                                    >
+                                      {e.cleared ? '✓' : ''}
+                                    </span>
+                                    {e.cleared ? 'Cleared' : 'Pending'}
+                                  </button>
+                                  <span className="tabular-nums">
+                                    Bal{' '}
+                                    <span className={amountColor(e.runningBalanceCents)}>
+                                      {formatCents(e.runningBalanceCents)}
+                                    </span>
+                                  </span>
+                                </div>
+                                <div className="flex gap-2 pt-1">
+                                  {/* Transfers are edited by deleting and re-creating, so
+                                      the per-leg edit form is hidden for transfer rows. */}
+                                  {!e.transferId && (
+                                    <button className="btn-secondary py-1.5" onClick={() => openEdit(e)}>
+                                      Edit
+                                    </button>
+                                  )}
+                                  <button
+                                    className="btn-danger py-1.5"
+                                    onClick={() => {
+                                      if (
+                                        e.transferId &&
+                                        !window.confirm('Delete this transfer? Both legs will be removed.')
+                                      ) {
+                                        return;
+                                      }
+                                      del.mutate(e.id);
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
             );
           })}
-        </ul>
+        </div>
       )}
 
       {selectMode && (

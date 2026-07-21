@@ -18,6 +18,9 @@ offbox-backups/
 .env.local
 infra/lilnas/.env
 
+# Deploy artifact written by deploy-lilnas.ps1 (records the previous tag for rollback)
+infra/.lilnas_previous_tag
+
 # Caddy local CA root cert (extracted per-deployment for client trust install)
 buddy-rootCA.crt
 
