@@ -637,7 +637,7 @@ export default function Ledger() {
                               </div>
                             </div>
                             {e.note && (
-                              <div className="text-xs italic text-gray-500">{e.note}</div>
+                              <div className="text-xs italic text-gray-500">Note: {e.note}</div>
                             )}
                             {selectMode ? (
                               <div className="text-xs tabular-nums text-gray-500">
